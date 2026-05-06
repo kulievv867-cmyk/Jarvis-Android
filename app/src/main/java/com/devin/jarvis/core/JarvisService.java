@@ -146,20 +146,18 @@ public class JarvisService extends Service implements Brain.ReplyHandler {
                     // Cut speech as soon as we hear "Jarvis" so the user can
                     // barge in without waiting for him to finish.
                     if (speaking.get()) interruptSpeech();
-                    // Duck any music currently playing so the recognizer can
-                    // hear the rest of the command over the song.
-                    com.devin.jarvis.commands.MusicService.duckIfPlaying(4500);
-                    broadcastTranscript(text, true);
-                }
-                // Aggressive early stop: if music is playing AND the partial
-                // already contains a stop keyword, kill the player NOW
-                // rather than wait for Vosk to finalise. Otherwise the song
-                // keeps blaring while the recognizer is still chewing on the
-                // tail of the phrase. We still let onResult run normally so
-                // Jarvis acknowledges with "Останавливаю воспроизведение".
-                if (com.devin.jarvis.commands.MusicService.isPlayingActive()
-                        && Intents.looksLikeStopMusic(text)) {
+                    // If music is currently playing, STOP it the instant we
+                    // hear the wake word. Previously we only ducked the
+                    // volume to 8% for 4.5 sec — but if the recogniser
+                    // mis-heard the stop verb (e.g. "остановим" vs the
+                    // expected "останови"), the duck would simply restore
+                    // and the song kept playing. Addressing Jarvis while a
+                    // song is on practically always means "stop it" anyway:
+                    // either explicitly, or because the user wants a query
+                    // they cannot reasonably hear over music. Net effect:
+                    // wake-word during music = silence, every time.
                     com.devin.jarvis.commands.MusicService.stopIfPlaying();
+                    broadcastTranscript(text, true);
                 }
             }
             @Override public void onResult(String text) {
@@ -169,7 +167,7 @@ public class JarvisService extends Service implements Brain.ReplyHandler {
                     if (speaking.get()) interruptSpeech();
                     broadcastTranscript(text, true);
                     armWatchdog();
-                    if (brain != null) brain.handleTranscript(text);
+                    handleVoiceCommand(text);
                 }
             }
             @Override public void onError(int code, String message) {
@@ -232,6 +230,17 @@ public class JarvisService extends Service implements Brain.ReplyHandler {
         }, 1200);
 
         listener.start();
+
+        // If the user has the optional Whisper-medium recognizer enabled,
+        // pre-load the model in the background so the first command after
+        // service start doesn't pay the ~3 sec model-load cost.
+        if (settings != null && settings.useWhisper()) {
+            try {
+                com.devin.jarvis.voice.WhisperRecognizer.get(this).loadAsync();
+            } catch (Throwable t) {
+                Log.w(TAG, "Whisper preload skipped: " + t);
+            }
+        }
     }
 
     private void shutdown() {
@@ -284,6 +293,57 @@ public class JarvisService extends Service implements Brain.ReplyHandler {
         broadcastTranscript(t, true);
         armWatchdog();
         if (brain != null) brain.handleTypedText(t);
+    }
+
+    /**
+     * Voice path: dispatches a Vosk-final transcript to the brain, optionally
+     * re-transcribing the recent mic audio with Whisper-medium for higher
+     * accuracy on rare words / names / accents. Whisper inference is heavy
+     * (~3–10 sec depending on phone), so we run it on a background thread and
+     * speak the user's "thinking" status while we wait. If Whisper fails or
+     * is disabled, the original Vosk text is used.
+     */
+    private void handleVoiceCommand(String voskText) {
+        boolean wantWhisper = settings != null
+                && settings.useWhisper()
+                && listener != null;
+        if (!wantWhisper) {
+            if (brain != null) brain.handleTranscript(voskText);
+            return;
+        }
+        com.devin.jarvis.voice.WhisperRecognizer w =
+                com.devin.jarvis.voice.WhisperRecognizer.get(this);
+        if (!w.isReady()) {
+            // First call kicks off async load; in the meantime fall back to Vosk.
+            w.loadAsync();
+            if (brain != null) brain.handleTranscript(voskText);
+            return;
+        }
+        // Snapshot the last ~10 sec of mic audio NOW so we don't lose it
+        // while Whisper runs.
+        final short[] pcm = listener.lastPcm16(10);
+        final String lang = settings.language();
+        final String fallback = voskText;
+        new Thread(() -> {
+            String betterText = null;
+            try {
+                long t0 = System.currentTimeMillis();
+                betterText = w.transcribePcm16Sync(pcm, lang);
+                long dt = System.currentTimeMillis() - t0;
+                Log.i(TAG, "Whisper(" + lang + ") took " + dt + " ms, said: \"" + betterText + "\"");
+            } catch (Throwable t) {
+                Log.w(TAG, "Whisper threw, using Vosk text", t);
+            }
+            String chosen = betterText;
+            if (chosen == null || chosen.isEmpty()) chosen = fallback;
+            // Re-broadcast the *Whisper* version of the transcript so the user
+            // sees what was actually understood.
+            final String shown = chosen;
+            main.post(() -> {
+                broadcastTranscript(shown, true);
+                if (brain != null) brain.handleTranscript(shown);
+            });
+        }, "Jarvis-Whisper-Run").start();
     }
 
     /** Re-read user-tunable knobs from settings and apply them on the fly. */

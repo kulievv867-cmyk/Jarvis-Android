@@ -96,4 +96,11 @@ public class Settings {
     public void setTheme(String t) {
         sp.edit().putString(KEY_THEME, t == null ? THEME_BLUE : t).apply();
     }
+
+    // ---- Whisper-medium re-recognition (off by default; trades latency for accuracy) ----
+
+    public static final String KEY_USE_WHISPER = "use_whisper";
+
+    public boolean useWhisper() { return sp.getBoolean(KEY_USE_WHISPER, false); }
+    public void setUseWhisper(boolean v) { sp.edit().putBoolean(KEY_USE_WHISPER, v).apply(); }
 }
