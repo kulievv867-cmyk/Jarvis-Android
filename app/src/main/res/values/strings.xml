@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Jarvis</string>
+
+    <string name="power_on">Включить</string>
+    <string name="shutdown">Выключить</string>
+    <string name="mute">Не слушать</string>
+    <string name="unmute">Слушать</string>
+
+    <string name="status_off">Выключен. Нажмите «Включить» и скажите «Джарвис, …»</string>
+    <string name="status_listening">Слушаю — скажите «Джарвис, …»</string>
+    <string name="status_muted">Микрофон выключен (помощник работает)</string>
+    <string name="status_processing">Обрабатываю запрос…</string>
+
+    <string name="notif_title">Jarvis активен</string>
+    <string name="notif_listening">Слушает команды</string>
+    <string name="notif_muted">Микрофон выключен</string>
+    <string name="notif_mute">Не слушать</string>
+    <string name="notif_unmute">Слушать</string>
+    <string name="notif_shutdown">Выключить</string>
+
+    <string name="reminder_title">Напоминание Jarvis</string>
+    <string name="reminders_channel">Напоминания</string>
+    <string name="reminders_channel_desc">Уведомления о запланированных напоминаниях</string>
+
+    <string name="alerts_channel">Срабатывания таймеров и будильников</string>
+    <string name="alerts_channel_desc">Громкое оповещение при срабатывании таймера, будильника или напоминания</string>
+    <string name="alert_stop">Остановить</string>
+
+    <string name="music_channel">Воспроизведение музыки</string>
+    <string name="music_channel_desc">Уведомление пока Jarvis проигрывает песню</string>
+    <string name="music_playing">Воспроизводится…</string>
+    <string name="music_stop">Стоп</string>
+
+    <string name="settings_title">Настройки</string>
+    <string name="setting_lang">Язык распознавания</string>
+    <string name="setting_key">OpenAI API ключ</string>
+    <string name="setting_key_desc">Используется для расширенных ответов и сводок памяти. Ключ хранится локально в приложении.</string>
+    <string name="setting_use_llm">Использовать нейросеть для непонятых команд</string>
+    <string name="setting_reverb">Реверберация голоса (зал)</string>
+    <string name="clear_memory">Очистить память диалога</string>
+    <string name="memory_cleared">Память очищена</string>
+
+    <string name="key_hint_empty">Введите API ключ (OpenAI / OpenRouter)</string>
+    <string name="key_hint_filled">Ключ установлен — введите новый, чтобы заменить</string>
+    <string name="key_saved">Ключ сохранён</string>
+    <string name="key_cleared">Ключ удалён</string>
+    <string name="key_save">Сохранить ключ</string>
+    <string name="key_clear">Удалить</string>
+    <string name="key_status_none">Ключ не задан — используется встроенный по умолчанию</string>
+    <string name="key_status_set">Активный ключ: %1$s</string>
+
+    <string name="setting_modulation">Модулятор голоса (под Джарвиса)</string>
+
+    <string name="setting_personalisation">Персональный контекст</string>
+    <string name="setting_personalisation_desc">Используется в подсказках для нейросети, чтобы Джарвис учитывал ваш город, часовой пояс и имя в ответах. Хранится только локально.</string>
+    <string name="hint_user_name">Ваше имя (например, Сергей)</string>
+    <string name="hint_user_city">Город (например, Краснодар)</string>
+    <string name="hint_user_country">Страна (например, Россия)</string>
+    <string name="hint_user_timezone">Часовой пояс (например, Europe/Moscow)</string>
+
+    <string name="err_no_recognizer">На устройстве нет сервиса распознавания речи. Установите Google App / Speech Services.</string>
+
+    <string name="text_input_hint">Напишите Джарвису…</string>
+    <string name="text_input_send">Отправить</string>
+    <string name="text_input_inactive">Сначала включите Джарвиса кнопкой «Включить»</string>
+
+    <string name="setting_theme">Цветовая тема</string>
+    <string name="theme_blue">Голубая (Stark)</string>
+    <string name="theme_orange">Оранжевая (янтарь)</string>
+    <string name="theme_green">Зелёная (малахит)</string>
+    <string name="theme_graphite">Тёмная (графит)</string>
+    <string name="theme_light">Светлая (тёплая)</string>
+    <string name="theme_change_note">Применится после перехода на главный экран</string>
+</resources>

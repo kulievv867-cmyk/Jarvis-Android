@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Legacy aliases — kept so that any code still referencing @color/bg
+         continues to compile; they map to the default Blue palette. -->
+    <color name="bg">@color/blue_bg</color>
+    <color name="panel">@color/blue_panel</color>
+    <color name="card">@color/blue_card</color>
+    <color name="card_border">@color/blue_card_border</color>
+    <color name="accent">@color/blue_accent</color>
+    <color name="text_primary">@color/blue_text_primary</color>
+    <color name="text_secondary">@color/blue_text_secondary</color>
+    <color name="bubble_user">@color/blue_bubble_user</color>
+    <color name="bubble_jarvis">@color/blue_bubble_jarvis</color>
+    <color name="ic_launcher_background">#0A1933</color>
+
+    <!-- Blue (default — Stark HUD). -->
+    <color name="blue_bg">#0A0F1C</color>
+    <color name="blue_panel">#0E1626</color>
+    <color name="blue_card">#152038</color>
+    <color name="blue_card_border">#1F2D4F</color>
+    <color name="blue_accent">#3FA9FF</color>
+    <color name="blue_text_primary">#E8EEFA</color>
+    <color name="blue_text_secondary">#9AA8C2</color>
+    <color name="blue_bubble_user">#1B2842</color>
+    <color name="blue_bubble_jarvis">#0E1626</color>
+
+    <!-- Orange (warm amber, calm — not neon). -->
+    <color name="orange_bg">#1B130C</color>
+    <color name="orange_panel">#221912</color>
+    <color name="orange_card">#2D2118</color>
+    <color name="orange_card_border">#4A3625</color>
+    <color name="orange_accent">#D89055</color>
+    <color name="orange_text_primary">#F2E6D7</color>
+    <color name="orange_text_secondary">#B8A491</color>
+    <color name="orange_bubble_user">#3A2A1B</color>
+    <color name="orange_bubble_jarvis">#221912</color>
+
+    <!-- Green (deep malachite). -->
+    <color name="green_bg">#0D1612</color>
+    <color name="green_panel">#121E18</color>
+    <color name="green_card">#172921</color>
+    <color name="green_card_border">#234638</color>
+    <color name="green_accent">#6BB295</color>
+    <color name="green_text_primary">#E2EEE7</color>
+    <color name="green_text_secondary">#9AB5A6</color>
+    <color name="green_bubble_user">#1E3329</color>
+    <color name="green_bubble_jarvis">#121E18</color>
+
+    <!-- Dark neutral (graphite, no accent hue). -->
+    <color name="dark_bg">#101113</color>
+    <color name="dark_panel">#16181B</color>
+    <color name="dark_card">#1E2024</color>
+    <color name="dark_card_border">#2D3037</color>
+    <color name="dark_accent">#9AA0AA</color>
+    <color name="dark_text_primary">#E5E7EA</color>
+    <color name="dark_text_secondary">#9097A0</color>
+    <color name="dark_bubble_user">#23262C</color>
+    <color name="dark_bubble_jarvis">#16181B</color>
+
+    <!-- Light (warm off-white, navy text). -->
+    <color name="light_bg">#F4EFE6</color>
+    <color name="light_panel">#EBE4D6</color>
+    <color name="light_card">#FFFCF5</color>
+    <color name="light_card_border">#D8CDB7</color>
+    <color name="light_accent">#3B5C8A</color>
+    <color name="light_text_primary">#1F2A3A</color>
+    <color name="light_text_secondary">#5C6A82</color>
+    <color name="light_bubble_user">#E1DCC8</color>
+    <color name="light_bubble_jarvis">#FFFCF5</color>
+</resources>

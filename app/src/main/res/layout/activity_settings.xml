@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?attr/jBg">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_title"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:textColor="?attr/jTextPrimary"
+            android:paddingBottom="16dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_theme"
+            android:textColor="?attr/jTextPrimary"
+            android:textSize="14sp"
+            android:paddingBottom="6dp" />
+
+        <Spinner
+            android:id="@+id/themeSpinner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="6dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/theme_change_note"
+            android:textColor="?attr/jTextSecondary"
+            android:textSize="12sp"
+            android:paddingBottom="20dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_lang"
+            android:textColor="?attr/jTextPrimary"
+            android:textSize="14sp"
+            android:paddingBottom="6dp" />
+
+        <Spinner
+            android:id="@+id/langSpinner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_key"
+            android:textColor="?attr/jTextPrimary"
+            android:textSize="14sp"
+            android:paddingBottom="2dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_key_desc"
+            android:textColor="?attr/jTextSecondary"
+            android:textSize="12sp"
+            android:paddingBottom="6dp" />
+
+        <TextView
+            android:id="@+id/keyStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="?attr/jAccent"
+            android:textSize="12sp"
+            android:paddingBottom="6dp" />
+
+        <EditText
+            android:id="@+id/keyEdit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="textVisiblePassword"
+            android:hint="@string/key_hint_empty"
+            android:textColor="?attr/jTextPrimary"
+            android:textColorHint="?attr/jTextSecondary"
+            android:layout_marginBottom="6dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="20dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/saveKeyBtn"
+                style="@style/Widget.Material3.Button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="6dp"
+                android:text="@string/key_save" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/clearKeyBtn"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="6dp"
+                android:text="@string/key_clear" />
+        </LinearLayout>
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/llmSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_use_llm"
+            android:textColor="?attr/jTextPrimary"
+            android:layout_marginBottom="12dp" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/modulationSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_modulation"
+            android:textColor="?attr/jTextPrimary"
+            android:layout_marginBottom="12dp" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/reverbSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_reverb"
+            android:textColor="?attr/jTextPrimary"
+            android:layout_marginBottom="20dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_personalisation"
+            android:textColor="?attr/jTextPrimary"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:paddingTop="6dp"
+            android:paddingBottom="2dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_personalisation_desc"
+            android:textColor="?attr/jTextSecondary"
+            android:textSize="12sp"
+            android:paddingBottom="6dp" />
+
+        <EditText
+            android:id="@+id/userNameEdit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/hint_user_name"
+            android:inputType="textPersonName"
+            android:textColor="?attr/jTextPrimary"
+            android:textColorHint="?attr/jTextSecondary"
+            android:layout_marginBottom="6dp" />
+
+        <EditText
+            android:id="@+id/userCityEdit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/hint_user_city"
+            android:inputType="textPostalAddress"
+            android:textColor="?attr/jTextPrimary"
+            android:textColorHint="?attr/jTextSecondary"
+            android:layout_marginBottom="6dp" />
+
+        <EditText
+            android:id="@+id/userCountryEdit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/hint_user_country"
+            android:inputType="textPostalAddress"
+            android:textColor="?attr/jTextPrimary"
+            android:textColorHint="?attr/jTextSecondary"
+            android:layout_marginBottom="6dp" />
+
+        <EditText
+            android:id="@+id/userTimezoneEdit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/hint_user_timezone"
+            android:inputType="text"
+            android:textColor="?attr/jTextPrimary"
+            android:textColorHint="?attr/jTextSecondary"
+            android:layout_marginBottom="20dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/clearMemoryBtn"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/clear_memory" />
+
+    </LinearLayout>
+
+</ScrollView>

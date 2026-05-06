@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Theme attributes used throughout layouts/drawables so we can swap the
+      whole palette by switching the activity theme. Every theme variant in
+      themes.xml sets concrete @color/... values for these attrs.
+    -->
+    <attr name="jBg" format="color" />
+    <attr name="jPanel" format="color" />
+    <attr name="jCard" format="color" />
+    <attr name="jCardBorder" format="color" />
+    <attr name="jAccent" format="color" />
+    <attr name="jTextPrimary" format="color" />
+    <attr name="jTextSecondary" format="color" />
+    <attr name="jBubbleUser" format="color" />
+    <attr name="jBubbleJarvis" format="color" />
+</resources>

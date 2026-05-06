@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      Base theme: shared structure. Colour palette is supplied by descendants
+      via the `j*` theme attributes declared in attrs.xml.
+    -->
+    <style name="Theme.Jarvis.Dark" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">?attr/jAccent</item>
+        <item name="colorOnPrimary">?attr/jBg</item>
+        <item name="colorPrimaryContainer">?attr/jCard</item>
+        <item name="colorOnPrimaryContainer">?attr/jTextPrimary</item>
+        <item name="colorSurface">?attr/jBg</item>
+        <item name="colorOnSurface">?attr/jTextPrimary</item>
+        <item name="android:colorBackground">?attr/jBg</item>
+        <item name="android:windowBackground">?attr/jBg</item>
+        <item name="android:statusBarColor">?attr/jBg</item>
+        <item name="android:navigationBarColor">?attr/jPanel</item>
+    </style>
+
+    <style name="Theme.Jarvis.Light" parent="Theme.Material3.Light.NoActionBar">
+        <item name="colorPrimary">?attr/jAccent</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">?attr/jCard</item>
+        <item name="colorOnPrimaryContainer">?attr/jTextPrimary</item>
+        <item name="colorSurface">?attr/jBg</item>
+        <item name="colorOnSurface">?attr/jTextPrimary</item>
+        <item name="android:colorBackground">?attr/jBg</item>
+        <item name="android:windowBackground">?attr/jBg</item>
+        <item name="android:statusBarColor">?attr/jBg</item>
+        <item name="android:navigationBarColor">?attr/jPanel</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">true</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">true</item>
+    </style>
+
+    <!-- Concrete palettes. Each one binds the j* attrs to a colour set. -->
+
+    <style name="Theme.Jarvis" parent="Theme.Jarvis.Dark">
+        <item name="jBg">@color/blue_bg</item>
+        <item name="jPanel">@color/blue_panel</item>
+        <item name="jCard">@color/blue_card</item>
+        <item name="jCardBorder">@color/blue_card_border</item>
+        <item name="jAccent">@color/blue_accent</item>
+        <item name="jTextPrimary">@color/blue_text_primary</item>
+        <item name="jTextSecondary">@color/blue_text_secondary</item>
+        <item name="jBubbleUser">@color/blue_bubble_user</item>
+        <item name="jBubbleJarvis">@color/blue_bubble_jarvis</item>
+    </style>
+
+    <style name="Theme.Jarvis.Blue" parent="Theme.Jarvis" />
+
+    <style name="Theme.Jarvis.Orange" parent="Theme.Jarvis.Dark">
+        <item name="jBg">@color/orange_bg</item>
+        <item name="jPanel">@color/orange_panel</item>
+        <item name="jCard">@color/orange_card</item>
+        <item name="jCardBorder">@color/orange_card_border</item>
+        <item name="jAccent">@color/orange_accent</item>
+        <item name="jTextPrimary">@color/orange_text_primary</item>
+        <item name="jTextSecondary">@color/orange_text_secondary</item>
+        <item name="jBubbleUser">@color/orange_bubble_user</item>
+        <item name="jBubbleJarvis">@color/orange_bubble_jarvis</item>
+    </style>
+
+    <style name="Theme.Jarvis.Green" parent="Theme.Jarvis.Dark">
+        <item name="jBg">@color/green_bg</item>
+        <item name="jPanel">@color/green_panel</item>
+        <item name="jCard">@color/green_card</item>
+        <item name="jCardBorder">@color/green_card_border</item>
+        <item name="jAccent">@color/green_accent</item>
+        <item name="jTextPrimary">@color/green_text_primary</item>
+        <item name="jTextSecondary">@color/green_text_secondary</item>
+        <item name="jBubbleUser">@color/green_bubble_user</item>
+        <item name="jBubbleJarvis">@color/green_bubble_jarvis</item>
+    </style>
+
+    <style name="Theme.Jarvis.Graphite" parent="Theme.Jarvis.Dark">
+        <item name="jBg">@color/dark_bg</item>
+        <item name="jPanel">@color/dark_panel</item>
+        <item name="jCard">@color/dark_card</item>
+        <item name="jCardBorder">@color/dark_card_border</item>
+        <item name="jAccent">@color/dark_accent</item>
+        <item name="jTextPrimary">@color/dark_text_primary</item>
+        <item name="jTextSecondary">@color/dark_text_secondary</item>
+        <item name="jBubbleUser">@color/dark_bubble_user</item>
+        <item name="jBubbleJarvis">@color/dark_bubble_jarvis</item>
+    </style>
+
+    <style name="Theme.Jarvis.LightWarm" parent="Theme.Jarvis.Light">
+        <item name="jBg">@color/light_bg</item>
+        <item name="jPanel">@color/light_panel</item>
+        <item name="jCard">@color/light_card</item>
+        <item name="jCardBorder">@color/light_card_border</item>
+        <item name="jAccent">@color/light_accent</item>
+        <item name="jTextPrimary">@color/light_text_primary</item>
+        <item name="jTextSecondary">@color/light_text_secondary</item>
+        <item name="jBubbleUser">@color/light_bubble_user</item>
+        <item name="jBubbleJarvis">@color/light_bubble_jarvis</item>
+    </style>
+
+</resources>
