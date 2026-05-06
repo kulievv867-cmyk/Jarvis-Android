@@ -97,10 +97,34 @@ public class Settings {
         sp.edit().putString(KEY_THEME, t == null ? THEME_BLUE : t).apply();
     }
 
-    // ---- Whisper-medium re-recognition (off by default; trades latency for accuracy) ----
+    // ---- Whisper re-recognition (off by default; trades latency for accuracy) ----
 
     public static final String KEY_USE_WHISPER = "use_whisper";
 
     public boolean useWhisper() { return sp.getBoolean(KEY_USE_WHISPER, false); }
     public void setUseWhisper(boolean v) { sp.edit().putBoolean(KEY_USE_WHISPER, v).apply(); }
+
+    // ---- Whisper model variant ----
+    // "base" — fastest, sub-second on flagships, weak Russian accuracy.
+    // "small" — balanced (~1–2 sec, decent Russian).
+    // "large-turbo" — top accuracy, ~3–5 sec on flagships.
+    // Default is "base" so the user gets the speed they asked for.
+
+    public static final String KEY_WHISPER_MODEL = "whisper_model";
+
+    public String whisperModel() {
+        String v = sp.getString(KEY_WHISPER_MODEL, "base");
+        if (v == null) return "base";
+        switch (v) {
+            case "base":
+            case "small":
+            case "large-turbo":
+                return v;
+            default:
+                return "base";
+        }
+    }
+    public void setWhisperModel(String v) {
+        sp.edit().putString(KEY_WHISPER_MODEL, v == null ? "base" : v).apply();
+    }
 }

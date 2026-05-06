@@ -37,7 +37,10 @@ public class SettingsActivity extends AppCompatActivity {
     private MaterialSwitch whisperSwitch;
     private TextView whisperStatus;
     private MaterialButton whisperDeleteBtn;
+    private Spinner whisperModelSpinner;
     private com.devin.jarvis.voice.WhisperRecognizer.ProgressListener whisperProgress;
+    private static final List<String> WHISPER_MODEL_VALUES = Arrays.asList(
+            "base", "small", "large-turbo");
     private EditText userNameEdit;
     private EditText userCityEdit;
     private EditText userCountryEdit;
@@ -72,6 +75,7 @@ public class SettingsActivity extends AppCompatActivity {
         whisperSwitch = findViewById(R.id.whisperSwitch);
         whisperStatus = findViewById(R.id.whisperStatus);
         whisperDeleteBtn = findViewById(R.id.whisperDeleteBtn);
+        whisperModelSpinner = findViewById(R.id.whisperModelSpinner);
         userNameEdit = findViewById(R.id.userNameEdit);
         userCityEdit = findViewById(R.id.userCityEdit);
         userCountryEdit = findViewById(R.id.userCountryEdit);
@@ -151,6 +155,39 @@ public class SettingsActivity extends AppCompatActivity {
                 whisperStatus.setVisibility(View.GONE);
                 refreshWhisperStatus();
             }
+        });
+
+        // Model size selector. Switching variants drops the previously
+        // cached file from disk to avoid stacking up 0.7 GB of Whisper
+        // models the user no longer wants.
+        List<String> whisperModelLabels = Arrays.asList(
+                getString(R.string.setting_whisper_model_base),
+                getString(R.string.setting_whisper_model_small),
+                getString(R.string.setting_whisper_model_large));
+        ArrayAdapter<String> wma = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, whisperModelLabels);
+        wma.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        whisperModelSpinner.setAdapter(wma);
+        int wmIdx = WHISPER_MODEL_VALUES.indexOf(settings.whisperModel());
+        if (wmIdx < 0) wmIdx = 0;
+        whisperModelSpinner.setSelection(wmIdx);
+        whisperModelSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                String picked = WHISPER_MODEL_VALUES.get(position);
+                if (picked.equals(settings.whisperModel())) return;
+                com.devin.jarvis.voice.WhisperRecognizer w =
+                        com.devin.jarvis.voice.WhisperRecognizer.get(SettingsActivity.this);
+                // Drop the now-stale model file (and any other variant) so
+                // the user doesn't accumulate ~0.7 GB of unused Whisper
+                // weights. The new variant will download on next loadAsync.
+                w.deleteCachedModel();
+                settings.setWhisperModel(picked);
+                if (settings.useWhisper()) {
+                    w.loadAsync();
+                }
+                refreshWhisperStatus();
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) {}
         });
 
         whisperProgress = new com.devin.jarvis.voice.WhisperRecognizer.ProgressListener() {

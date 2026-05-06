@@ -143,7 +143,10 @@ public class JarvisVoice {
             String voice = "ru".equalsIgnoreCase(settings.language())
                     ? EdgeTts.VOICE_RUSSIAN_MALE
                     : EdgeTts.VOICE_BRITISH_MALE;
-            byte[] mp3Bytes = edge.synthesize(text, voice, "-3%", "+0Hz");
+            // Slow + slightly lower pitch puts Edge TTS into "calm British
+            // butler" territory — closer to film-Jarvis than the default
+            // perky news-reader cadence.
+            byte[] mp3Bytes = edge.synthesize(text, voice, "-8%", "-2Hz");
             if (mp3Bytes == null || mp3Bytes.length < 64) {
                 Log.w(TAG, "Edge TTS returned no audio");
                 return false;
@@ -254,7 +257,14 @@ public class JarvisVoice {
         // Drop any queued text to avoid backing up an angry queue if the user
         // talks fast.
         requests.clear();
-        requests.offer(text);
+        // Split the reply into sentences and queue each one separately. The
+        // worker synthesises sentence N+1 while the user is still hearing
+        // sentence N, so perceived latency is dominated by the *first*
+        // sentence — which is typically very short ("Готово.", "Слушаю.")
+        // and therefore comes out of Edge TTS in well under a second.
+        for (String chunk : splitForStreaming(text)) {
+            requests.offer(chunk);
+        }
     }
 
     /**
@@ -265,7 +275,59 @@ public class JarvisVoice {
     public void speakAppend(String text) {
         if (text == null || text.isEmpty()) return;
         if (!alive.get()) return;
-        requests.offer(text);
+        for (String chunk : splitForStreaming(text)) {
+            requests.offer(chunk);
+        }
+    }
+
+    /**
+     * Split a reply into chunks no larger than ~120 characters, breaking on
+     * sentence boundaries. This lets the speech worker synthesise + play
+     * the first chunk while the rest is still in flight, halving perceived
+     * latency on multi-sentence answers.
+     */
+    private static java.util.List<String> splitForStreaming(String text) {
+        java.util.ArrayList<String> out = new java.util.ArrayList<>();
+        if (text == null) return out;
+        text = text.trim();
+        if (text.isEmpty()) return out;
+        // Short text — no point splitting.
+        if (text.length() <= 80) {
+            out.add(text);
+            return out;
+        }
+        StringBuilder cur = new StringBuilder();
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            cur.append(c);
+            boolean atBoundary = (c == '.' || c == '!' || c == '?' || c == '…')
+                    && (i + 1 >= text.length() || Character.isWhitespace(text.charAt(i + 1)));
+            if (atBoundary && cur.length() >= 24) {
+                out.add(cur.toString().trim());
+                cur.setLength(0);
+            } else if (cur.length() > 220) {
+                // No sentence boundary in sight; soft-break on a comma or
+                // space so we still flush something to TTS reasonably soon.
+                int comma = lastIndexOf(cur, ',');
+                int space = lastIndexOf(cur, ' ');
+                int cut = comma > 0 ? comma + 1 : (space > 0 ? space : -1);
+                if (cut > 80) {
+                    out.add(cur.substring(0, cut).trim());
+                    String rem = cur.substring(cut).trim();
+                    cur.setLength(0);
+                    cur.append(rem);
+                }
+            }
+        }
+        String tail = cur.toString().trim();
+        if (!tail.isEmpty()) out.add(tail);
+        if (out.isEmpty()) out.add(text);
+        return out;
+    }
+
+    private static int lastIndexOf(StringBuilder sb, char ch) {
+        for (int i = sb.length() - 1; i >= 0; i--) if (sb.charAt(i) == ch) return i;
+        return -1;
     }
 
     public void stop() {
@@ -297,10 +359,20 @@ public class JarvisVoice {
         }
     }
 
-    /** Apply the Jarvis modulation chain in-place on float samples [-1, 1]. */
+    /** Apply the Jarvis modulation chain in-place on float samples [-1, 1].
+     *  Tuning notes:
+     *   - HP at 70 Hz removes mic-style rumble without thinning the chest.
+     *   - Slight warm bump (130 Hz, +2 dB) for chest resonance.
+     *   - Presence (3 kHz, +3 dB) gives Bettany-like consonant clarity.
+     *   - Pitch ratio 0.94 takes Dmitry/Ryan a touch deeper — the movie
+     *     Jarvis is noticeably below ordinary newsreader pitch.
+     *   - Reverb at 0.10 wet sounds like "next to you" rather than "in a
+     *     cathedral" — the previous 0.18 was too washy and made each
+     *     reply feel slow.
+     */
     private void applyDsp(float[] samples, int sr) {
         Biquad hp = new Biquad();
-        hp.setHighpass(sr, 80f, 0.707f);
+        hp.setHighpass(sr, 70f, 0.707f);
         Biquad warm = new Biquad();
         warm.setPeak(sr, 130f, 0.9f, 2.0f);
         Biquad presence = new Biquad();
@@ -308,7 +380,7 @@ public class JarvisVoice {
         Biquad tame = new Biquad();
         tame.setPeak(sr, 6500f, 0.9f, -2.0f);
         PitchShifter pitch = new PitchShifter(1024, 4);
-        pitch.setRatio(0.961f);
+        pitch.setRatio(0.94f);
         Reverb reverb = new Reverb(sr);
 
         for (int i = 0; i < samples.length; i++) {
@@ -321,7 +393,7 @@ public class JarvisVoice {
             v = (float) Math.tanh(v * 1.35);
             if (reverbEnabled) {
                 float wet = reverb.process(v);
-                v = v * 0.85f + wet * 0.18f;
+                v = v * 0.90f + wet * 0.10f;
             }
             if (v > 0.985f) v = 0.985f;
             else if (v < -0.985f) v = -0.985f;
@@ -362,7 +434,11 @@ public class JarvisVoice {
                 if (written < 0) break;
                 idx += n;
             }
-            try { Thread.sleep(60); } catch (InterruptedException ignored) {}
+            // No tail-sleep here. AudioTrack.MODE_STREAM blocks in write()
+            // until each buffer is consumed, so by the time we exit the
+            // loop above the speech has already played out. The previous
+            // 60 ms sleep was just dead time before starting the next
+            // chunk.
         } finally {
             currentTrack = null;
             try { at.stop(); } catch (Exception ignored) {}

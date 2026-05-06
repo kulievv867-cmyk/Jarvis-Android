@@ -6,6 +6,8 @@ import android.os.HandlerThread;
 import android.os.Looper;
 import android.util.Log;
 
+import com.devin.jarvis.core.Settings;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -19,32 +21,55 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * High-level wrapper for whisper.cpp inference.
  *
- *  • Downloads the ggml-large-v3-turbo-q5_0 model (~547 MB) from
- *    huggingface.co on first use; the file is cached in the app's filesDir
- *    so it's downloaded only once.
+ *  • Selectable model size: "base" (≈57 MB, sub-second on flagships, weaker
+ *    on Russian), "small" (≈181 MB, ~1–2 sec, good Russian accuracy),
+ *    "large-turbo" (≈547 MB, ~3–5 sec, top accuracy). The active model is
+ *    read from {@link Settings#whisperModel()} on each loadAsync; switching
+ *    models in Settings frees the previous context and downloads the new
+ *    one on demand.
  *  • Holds a single long-lived whisper context on a dedicated background
- *    thread to avoid the ~3 sec model-load cost per command.
+ *    thread to avoid model-load cost per command.
  *  • Exposes {@link #transcribePcm16Sync(short[], String)} for callers that
  *    already have a 16 kHz mono PCM-16 buffer.
  *
- * If the native lib fails to load (very old devices, missing NEON, OOM at
- * model load) every call returns {@code null} and the caller is expected to
- * fall back to Vosk.
+ * If the native lib fails to load every call returns {@code null} and the
+ * caller is expected to fall back to Vosk.
  */
 public final class WhisperRecognizer {
 
     private static final String TAG = "Jarvis-Whisper";
 
-    /** HuggingFace download URL for the ggml model. */
-    public static final String MODEL_URL =
-            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin";
+    /** Available model variants. The {@code id} is what we persist in
+     *  Settings; the {@code fileName} doubles as the filename on disk and
+     *  the path under the HF repo. */
+    public enum Variant {
+        BASE     ("base",        "ggml-base-q5_1.bin",          59_707_625L,  "Base (быстро, ~57 МБ)"),
+        SMALL    ("small",       "ggml-small-q5_1.bin",        190_085_487L,  "Small (баланс, ~181 МБ)"),
+        LARGE    ("large-turbo", "ggml-large-v3-turbo-q5_0.bin", 574_041_195L, "Large-v3-turbo (точно, ~547 МБ)");
 
-    /** Filename under filesDir/whisper/ */
-    public static final String MODEL_FILE  = "ggml-large-v3-turbo-q5_0.bin";
+        public final String id;
+        public final String fileName;
+        public final long sizeBytes;
+        public final String displayLabel;
 
-    /** Expected size of the bundled model, in bytes. Used to detect partial
-     *  downloads. Pinned to the size we observed on HF (574_041_195 bytes). */
-    public static final long MODEL_SIZE_BYTES = 574_041_195L;
+        Variant(String id, String fileName, long sizeBytes, String displayLabel) {
+            this.id = id;
+            this.fileName = fileName;
+            this.sizeBytes = sizeBytes;
+            this.displayLabel = displayLabel;
+        }
+
+        public String url() {
+            return "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/" + fileName;
+        }
+
+        /** Returns the variant matching {@code id}, defaulting to BASE. */
+        public static Variant byId(String id) {
+            if (id == null) return BASE;
+            for (Variant v : values()) if (v.id.equals(id)) return v;
+            return BASE;
+        }
+    }
 
     public interface ProgressListener {
         /** Called on the main thread. */
@@ -79,6 +104,7 @@ public final class WhisperRecognizer {
     private volatile boolean ready = false;
     private volatile boolean downloading = false;
     private volatile String lastError = "";
+    private volatile Variant loadedVariant = null;
     private final List<ProgressListener> progressListeners = new ArrayList<>();
 
     private WhisperRecognizer(Context appCtx) {
@@ -99,43 +125,74 @@ public final class WhisperRecognizer {
         progressListeners.remove(l);
     }
 
-    /** Returns true iff the model file is already on disk at full size. */
+    /** The variant the user has selected in Settings (BASE by default). */
+    private Variant selectedVariant() {
+        try {
+            return Variant.byId(new Settings(appCtx).whisperModel());
+        } catch (Throwable t) {
+            return Variant.BASE;
+        }
+    }
+
+    /** Returns true iff the currently-selected model file is on disk at full size. */
     public boolean isModelDownloaded() {
-        return modelFile().length() == MODEL_SIZE_BYTES;
+        return isModelDownloaded(selectedVariant());
     }
 
-    /** Returns the local model file path, regardless of whether it exists yet. */
-    public File modelFile() {
+    public boolean isModelDownloaded(Variant v) {
+        return modelFile(v).length() == v.sizeBytes;
+    }
+
+    /** Path to the on-disk model file (may not exist yet). */
+    public File modelFile() { return modelFile(selectedVariant()); }
+    public File modelFile(Variant v) {
         File outDir = new File(appCtx.getFilesDir(), "whisper");
-        return new File(outDir, MODEL_FILE);
+        return new File(outDir, v.fileName);
     }
 
-    /** Free disk reclaim helper. */
+    /** Free disk reclaim helper. Removes ALL cached model variants — the
+     *  user explicitly asked to reclaim space, so we don't leave any
+     *  half-present model behind. */
     public synchronized void deleteCachedModel() {
         close();
         loadAttempted = false;
-        File f = modelFile();
-        try { if (f.exists()) f.delete(); } catch (Throwable ignored) {}
+        for (Variant v : Variant.values()) {
+            File f = modelFile(v);
+            try { if (f.exists()) f.delete(); } catch (Throwable ignored) {}
+        }
     }
 
     /**
-     * Asynchronously download (if needed) + load the model. Safe to call
-     * multiple times; only the first call performs work. Listeners attached
-     * via {@link #addProgressListener} get progress callbacks.
+     * Asynchronously download (if needed) + load the currently-selected
+     * model. Safe to call multiple times; if the loaded variant differs
+     * from the user's current selection, the old context is freed and the
+     * new one loaded transparently.
      */
     public void loadAsync() {
-        if (loadAttempted) return;
+        Variant target = selectedVariant();
+        if (loadAttempted && ready && target == loadedVariant) return;
         loadAttempted = true;
-        handler.post(this::loadOnWorker);
+        handler.post(() -> loadOnWorker(target));
     }
 
-    private void loadOnWorker() {
+    private synchronized void loadOnWorker(Variant target) {
         try {
             if (!WhisperJni.ensureLoaded()) {
                 fail("native lib failed: " + WhisperJni.lastLoadError());
                 return;
             }
-            File f = ensureModelDownloaded();
+            // If a different variant was previously loaded, free its
+            // context before proceeding so we don't keep two ~500 MB
+            // models in RAM at the same time.
+            if (loadedVariant != null && loadedVariant != target) {
+                long old = contextPtr.getAndSet(0L);
+                if (old != 0L) {
+                    try { WhisperJni.freeContext(old); } catch (Throwable ignored) {}
+                }
+                ready = false;
+                loadedVariant = null;
+            }
+            File f = ensureModelDownloaded(target);
             if (f == null) {
                 // ensureModelDownloaded already called fail(...) with details.
                 return;
@@ -146,8 +203,9 @@ public final class WhisperRecognizer {
                 return;
             }
             contextPtr.set(ptr);
+            loadedVariant = target;
             ready = true;
-            Log.i(TAG, "Whisper ready. " + WhisperJni.systemInfo());
+            Log.i(TAG, "Whisper " + target.id + " ready. " + WhisperJni.systemInfo());
             postReady();
         } catch (Throwable t) {
             fail("load failed: " + t);
@@ -182,25 +240,26 @@ public final class WhisperRecognizer {
             try { WhisperJni.freeContext(ptr); } catch (Throwable ignored) {}
         }
         ready = false;
+        loadedVariant = null;
     }
 
     // ---------------------------------------------------------------------
     // Download + cache
     // ---------------------------------------------------------------------
 
-    private File ensureModelDownloaded() {
+    private File ensureModelDownloaded(Variant v) {
         File outDir = new File(appCtx.getFilesDir(), "whisper");
         if (!outDir.exists()) outDir.mkdirs();
-        File out = new File(outDir, MODEL_FILE);
+        File out = new File(outDir, v.fileName);
 
-        if (out.exists() && out.length() == MODEL_SIZE_BYTES) {
+        if (out.exists() && out.length() == v.sizeBytes) {
             return out;
         }
-        Log.i(TAG, "Downloading whisper model from " + MODEL_URL);
+        Log.i(TAG, "Downloading whisper model from " + v.url());
         downloading = true;
         try {
-            File tmp = new File(outDir, MODEL_FILE + ".part");
-            URL url = new URL(MODEL_URL);
+            File tmp = new File(outDir, v.fileName + ".part");
+            URL url = new URL(v.url());
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setConnectTimeout(15_000);
             conn.setReadTimeout(60_000);
@@ -212,7 +271,7 @@ public final class WhisperRecognizer {
                 return null;
             }
             long total = conn.getContentLengthLong();
-            if (total <= 0) total = MODEL_SIZE_BYTES;
+            if (total <= 0) total = v.sizeBytes;
 
             try (InputStream in = conn.getInputStream();
                  OutputStream os = new FileOutputStream(tmp)) {
@@ -223,8 +282,6 @@ public final class WhisperRecognizer {
                 while ((n = in.read(buf)) > 0) {
                     os.write(buf, 0, n);
                     downloaded += n;
-                    // Throttle progress callbacks to once per ~1% so we don't
-                    // flood the UI thread.
                     long step = Math.max(total / 100, 1);
                     if (downloaded - lastReported >= step) {
                         lastReported = downloaded;
@@ -234,19 +291,17 @@ public final class WhisperRecognizer {
                 os.flush();
                 postProgress(downloaded, total);
             }
-            // Verify size matches expected so we don't load a truncated file.
             long got = tmp.length();
-            if (MODEL_SIZE_BYTES > 0 && got != MODEL_SIZE_BYTES) {
-                Log.w(TAG, "Downloaded model size " + got
-                        + " bytes (expected " + MODEL_SIZE_BYTES + ")");
-                // We still rename — the file may have changed upstream.
+            if (v.sizeBytes > 0 && got != v.sizeBytes) {
+                Log.w(TAG, "Downloaded " + v.id + " size " + got
+                        + " bytes (expected " + v.sizeBytes + ")");
             }
             try { out.delete(); } catch (Throwable ignored) {}
             if (!tmp.renameTo(out)) {
                 fail("rename of downloaded model failed");
                 return null;
             }
-            Log.i(TAG, "Whisper model downloaded: " + out.length() + " bytes");
+            Log.i(TAG, "Whisper " + v.id + " downloaded: " + out.length() + " bytes");
             return out;
         } catch (Throwable t) {
             Log.e(TAG, "download failed", t);
@@ -263,25 +318,27 @@ public final class WhisperRecognizer {
 
     private void postProgress(long downloaded, long total) {
         main.post(() -> {
-            for (ProgressListener l : new ArrayList<>(progressListeners)) {
-                try { l.onProgress(downloaded, total); } catch (Throwable ignored) {}
-            }
+            List<ProgressListener> snapshot;
+            synchronized (this) { snapshot = new ArrayList<>(progressListeners); }
+            for (ProgressListener l : snapshot) l.onProgress(downloaded, total);
         });
     }
     private void postReady() {
         main.post(() -> {
-            for (ProgressListener l : new ArrayList<>(progressListeners)) {
-                try { l.onReady(); } catch (Throwable ignored) {}
-            }
+            List<ProgressListener> snapshot;
+            synchronized (this) { snapshot = new ArrayList<>(progressListeners); }
+            for (ProgressListener l : snapshot) l.onReady();
         });
     }
-    private void fail(String msg) {
-        lastError = msg;
-        Log.w(TAG, msg);
+    private void fail(String message) {
+        Log.w(TAG, "Whisper failed: " + message);
+        lastError = message;
+        ready = false;
+        downloading = false;
         main.post(() -> {
-            for (ProgressListener l : new ArrayList<>(progressListeners)) {
-                try { l.onError(msg); } catch (Throwable ignored) {}
-            }
+            List<ProgressListener> snapshot;
+            synchronized (this) { snapshot = new ArrayList<>(progressListeners); }
+            for (ProgressListener l : snapshot) l.onError(message);
         });
     }
 }

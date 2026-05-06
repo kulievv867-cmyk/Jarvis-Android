@@ -113,29 +113,25 @@ public class Brain {
     }
 
     private void ack() {
-        say(ru() ? "Слушаю, сэр." : "At your service, sir.");
+        say(ru() ? Persona.ackRu() : Persona.ackEn());
     }
 
     private void doOpen(String name) {
         AppLauncher.Match m = launcher.findApp(name);
         if (m == null) {
-            say(ru()
-                    ? "Не нашёл приложение «" + name + "», сэр."
-                    : "I couldn't find an app called \"" + name + "\", sir.");
+            say(ru() ? Persona.unknownAppRu(name) : Persona.unknownAppEn(name));
             return;
         }
         boolean ok = launcher.open(m);
         say(ok
-                ? (ru() ? "Открываю " + m.label + "." : "Opening " + m.label + ".")
+                ? (ru() ? Persona.openingRu(m.label) : Persona.openingEn(m.label))
                 : (ru() ? "Не удалось открыть " + m.label + "." : "Failed to open " + m.label + "."));
     }
 
     private void doClose(String name) {
         AppLauncher.Match m = launcher.findApp(name);
         if (m == null) {
-            say(ru()
-                    ? "Не вижу такого приложения, сэр."
-                    : "I don't see that app, sir.");
+            say(ru() ? Persona.unknownAppRu(name) : Persona.unknownAppEn(name));
             return;
         }
         // Best-effort kill of background processes.
@@ -143,13 +139,13 @@ public class Brain {
         // Then open App Info so user can press Force Stop if app is still in foreground.
         launcher.openAppInfo(m);
         say(ru()
-                ? "Android не позволяет мне закрывать приложения напрямую без root, сэр. Я остановил фоновые процессы " + m.label + " и открыл страницу настроек — нажмите «Остановить» там."
-                : "Android doesn't allow me to close foreground apps without root, sir. I've killed " + m.label + "'s background processes and opened its info page — tap Force Stop there.");
+                ? "Без root напрямую закрыть нельзя. Фоновые процессы " + m.label + " остановил, страницу настроек открыл — нажмите «Остановить» там."
+                : "Can't close foregrounded apps without root. I've killed " + m.label + "'s background processes and opened its info page — tap Force Stop there.");
     }
 
     private void doTranslate(String text, String src, String dst) {
         if (text == null || text.isEmpty() || dst == null || dst.isEmpty()) {
-            say(ru() ? "Что нужно перевести, сэр?" : "What should I translate, sir?");
+            say(ru() ? "Что нужно перевести?" : "What should I translate?");
             return;
         }
         reply.status(ru() ? "Перевожу…" : "Translating...");
@@ -172,12 +168,9 @@ public class Brain {
             say(ru() ? "Не получилось завести таймер." : "Couldn't set the timer.");
             return;
         }
-        String where = r.usedSystemClock
-                ? (ru() ? "в системных «Часах»" : "in the system Clock app")
-                : (ru() ? "внутри Jarvis" : "in-app");
         say(ru()
-                ? "Таймер на " + humanDuration(seconds) + " установлен " + where + ", сэр."
-                : "Timer for " + humanDurationEn(seconds) + " set " + where + ", sir.");
+                ? Persona.timerSetRu(humanDuration(seconds), r.usedSystemClock)
+                : Persona.timerSetEn(humanDurationEn(seconds), r.usedSystemClock));
     }
 
     private void doAlarm(int hour24, int minute) {
@@ -187,24 +180,25 @@ public class Brain {
             say(ru() ? "Не получилось поставить будильник." : "Failed to set the alarm.");
             return;
         }
-        String where = r.usedSystemClock
-                ? (ru() ? "в системных «Часах»" : "in the system Clock app")
-                : (ru() ? "внутри Jarvis" : "in-app");
         say(ru()
-                ? "Будильник на " + hhmm + " поставлен " + where + ", сэр."
-                : "Alarm set for " + hhmm + " " + where + ", sir.");
+                ? Persona.alarmSetRu(hhmm, r.usedSystemClock)
+                : Persona.alarmSetEn(hhmm, r.usedSystemClock));
     }
 
     private void doReminder(int seconds, String text) {
         boolean ok = reminders.schedule(seconds, text);
-        say(ok
-                ? (ru() ? "Напомню через " + humanDuration(seconds) + ": " + text : "I'll remind you in " + humanDurationEn(seconds) + ": " + text)
-                : (ru() ? "Не удалось поставить напоминание." : "Couldn't set the reminder."));
+        if (!ok) {
+            say(ru() ? "Не удалось поставить напоминание." : "Couldn't set the reminder.");
+            return;
+        }
+        say(ru()
+                ? Persona.reminderSetRu(humanDuration(seconds), text)
+                : Persona.reminderSetEn(humanDurationEn(seconds), text));
     }
 
     private void doPlayMusic(String song) {
         if (song == null || song.isEmpty()) {
-            say(ru() ? "Какую композицию включить, сэр?" : "Which song would you like, sir?");
+            say(ru() ? "Какую композицию включить?" : "Which song would you like?");
             return;
         }
         reply.status(ru() ? "Ищу «" + song + "»…" : "Searching for \"" + song + "\"...");
@@ -212,14 +206,12 @@ public class Brain {
             @Override public void onPlaying(MusicPlayer.Result r) {
                 String niceTitle = (r.title == null || r.title.isEmpty()) ? song : r.title;
                 if (r.artist != null && !r.artist.isEmpty()) niceTitle = niceTitle + " — " + r.artist;
-                say(ru()
-                        ? "Включаю «" + niceTitle + "», сэр."
-                        : "Playing \"" + niceTitle + "\", sir.");
+                say(ru() ? Persona.playingRu(niceTitle) : Persona.playingEn(niceTitle));
             }
             @Override public void onError(String reason) {
                 say(ru()
-                        ? "Не удалось найти «" + song + "», сэр. (" + reason + ")"
-                        : "Couldn't find \"" + song + "\", sir. (" + reason + ")");
+                        ? "Не удалось найти «" + song + "». (" + reason + ")"
+                        : "Couldn't find \"" + song + "\". (" + reason + ")");
             }
         });
     }
@@ -232,7 +224,7 @@ public class Brain {
         // somehow been cleared.
         com.devin.jarvis.commands.MusicService.stopIfPlaying();
         music.stopInApp();
-        say(ru() ? "Останавливаю воспроизведение, сэр." : "Stopping playback, sir.");
+        say(ru() ? Persona.stopMusicRu() : Persona.stopMusicEn());
     }
 
     private void doWhoAreYou() {
@@ -257,14 +249,14 @@ public class Brain {
                 }
                 @Override public void onError(String reason) {
                     say(ru()
-                            ? "Я не понял команду, сэр. (Сетевая модель недоступна: " + reason + ")"
-                            : "I didn't catch that, sir. (Model unavailable: " + reason + ")");
+                            ? "Не понял команду. (Сетевая модель недоступна: " + reason + ")"
+                            : "I didn't catch that. (Model unavailable: " + reason + ")");
                 }
             });
         } else {
             say(ru()
-                    ? "Не понял команду, сэр. Скажите «Джарвис, что ты умеешь», чтобы я перечислил возможности."
-                    : "I didn't catch that, sir. Say \"Jarvis, help\" to hear what I can do.");
+                    ? "Не понял команду. Скажите «Джарвис, что ты умеешь», чтобы я перечислил возможности."
+                    : "I didn't catch that. Say \"Jarvis, help\" to hear what I can do.");
         }
     }
 
