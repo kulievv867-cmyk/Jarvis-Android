@@ -175,16 +175,16 @@ public class JarvisService extends Service implements Brain.ReplyHandler {
                 String msg;
                 if ("no_record_permission".equals(message)) {
                     msg = "ru".equalsIgnoreCase(settings.language())
-                            ? "Нет разрешения на микрофон, сэр."
-                            : "Microphone permission missing, sir.";
+                            ? "Нет разрешения на микрофон."
+                            : "Microphone permission missing.";
                 } else if (message != null && message.startsWith("model_unpack_failed")) {
                     msg = "ru".equalsIgnoreCase(settings.language())
-                            ? "Не удалось распаковать модель распознавания, сэр."
-                            : "Could not unpack the speech model, sir.";
+                            ? "Не удалось распаковать модель распознавания."
+                            : "Could not unpack the speech model.";
                 } else if (message != null && message.startsWith("audio_record")) {
                     msg = "ru".equalsIgnoreCase(settings.language())
-                            ? "Не удалось открыть микрофон, сэр."
-                            : "Could not open the microphone, sir.";
+                            ? "Не удалось открыть микрофон."
+                            : "Could not open the microphone.";
                 } else {
                     msg = message;
                 }
@@ -223,8 +223,16 @@ public class JarvisService extends Service implements Brain.ReplyHandler {
         main.postDelayed(() -> {
             if (speaker != null) {
                 String greet = "ru".equalsIgnoreCase(settings.language())
-                        ? "Все системы запущены, сэр. Я к вашим услугам."
-                        : "All systems online, sir. At your service.";
+                        ? Persona.pick(
+                            "Системы запущены. Я к вашим услугам.",
+                            "Готов к работе.",
+                            "На связи. Командуйте.",
+                            "Все системы запущены, сэр.")
+                        : Persona.pick(
+                            "All systems online.",
+                            "Ready when you are.",
+                            "Standing by.",
+                            "Online, sir.");
                 say(greet);
             }
         }, 1200);
@@ -260,8 +268,8 @@ public class JarvisService extends Service implements Brain.ReplyHandler {
         listener.setMuted(newMuted);
         if (speaker != null) {
             String reply = "ru".equalsIgnoreCase(settings.language())
-                    ? (newMuted ? "Микрофон выключен, сэр." : "Микрофон включён.")
-                    : (newMuted ? "Microphone muted, sir." : "Microphone live again.");
+                    ? (newMuted ? "Микрофон выключен." : "Микрофон включён.")
+                    : (newMuted ? "Microphone muted." : "Microphone live again.");
             // Use say() so the response goes through the same mute-during-
             // speech logic. (When unmuting we DO want to hear the voice; the
             // listener was muted before this call, so say() won't auto-unmute
@@ -363,8 +371,15 @@ public class JarvisService extends Service implements Brain.ReplyHandler {
     private final Runnable watchdogTask = () -> {
         boolean ru = settings != null && "ru".equalsIgnoreCase(settings.language());
         say(ru
-                ? "Что-то я задумался, сэр. Повторите, пожалуйста."
-                : "I'm afraid I lost my train of thought, sir. Try again.");
+                ? Persona.pick(
+                    "Что-то я задумался. Повторите, пожалуйста.",
+                    "Извините, пропустил. Повторите.",
+                    "Простите, сэр — выпал. Повторите.",
+                    "Связь встала. Пробуйте ещё раз.")
+                : Persona.pick(
+                    "I'm afraid I lost my train of thought. Try again.",
+                    "My apologies — missed that. Once more?",
+                    "Sorry, sir, I drifted. Repeat please."));
     };
 
     /**
@@ -435,8 +450,14 @@ public class JarvisService extends Service implements Brain.ReplyHandler {
     @Override
     public void onShutdownRequested() {
         say("ru".equalsIgnoreCase(settings.language())
-                ? "Перехожу в спящий режим, сэр."
-                : "Going to sleep, sir.");
+                ? Persona.pick(
+                    "Перехожу в спящий режим.",
+                    "Отключаюсь. До связи.",
+                    "Иду спать, сэр.")
+                : Persona.pick(
+                    "Going to sleep.",
+                    "Powering down. Until next time.",
+                    "Standing down, sir."));
         main.postDelayed(this::shutdown, 1500);
     }
 

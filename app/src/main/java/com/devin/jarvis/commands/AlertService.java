@@ -44,7 +44,16 @@ public class AlertService extends Service {
 
     private static final String CHANNEL_ID = "jarvis_alerts";
     private static final int NOTIF_ID = 7000;
-    private static final long MAX_RUN_MS = 60_000L;
+    /**
+     * Internal alert tone is capped at 3 seconds so that the recognizer can
+     * still hear "Джарвис, стоп / выключи" the moment the alarm rings.
+     * Anything longer drowns the microphone — even with our 8% music duck
+     * the alarm is on STREAM_ALARM at full volume and the mic can't pick
+     * voice over it. The system Clock alarm (set in parallel via
+     * AlarmClock.ACTION_SET_ALARM) is the one the user is meant to interact
+     * with for snooze / stop; this internal sound is just a fallback "ping".
+     */
+    private static final long MAX_RUN_MS = 3_000L;
 
     private MediaPlayer player;
     private Vibrator vibrator;

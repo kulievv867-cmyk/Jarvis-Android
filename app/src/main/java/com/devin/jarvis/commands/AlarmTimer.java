@@ -37,19 +37,31 @@ public class AlarmTimer {
         // Clock, etc. all handle ACTION_SET_TIMER). EXTRA_SKIP_UI=true makes
         // the timer start without opening the clock app.
         boolean sys = trySystemTimer(seconds, message);
+        // 2) Only fall back to our own AlarmManager if the system Clock
+        // didn't accept the intent (no Clock app installed / unsupported
+        // ROM). Otherwise scheduling both would result in a double-alert
+        // 3 seconds apart at the trigger time.
+        if (sys) {
+            return new Result(true, true);
+        }
         long triggerAt = System.currentTimeMillis() + seconds * 1000L;
-        // 2) Always also schedule our internal alarm — guarantees an audible
-        // alert even if the system Clock silently swallows the intent.
         boolean own = schedule(triggerAt,
                 "Таймер истёк",
                 message == null || message.isEmpty()
                         ? humanDurationRu(seconds)
                         : message);
-        return new Result(sys || own, sys);
+        return new Result(own, false);
     }
 
     public Result setAlarm(int hour24, int minute, String message) {
         boolean sys = trySystemAlarm(hour24, minute, message);
+        // Same reasoning as setTimer: only fall back to internal AlarmManager
+        // when the system Clock app isn't around to take ownership of the
+        // alarm. Otherwise the user would get one notification from the
+        // Clock app and a second one (3 sec internal ping) from us.
+        if (sys) {
+            return new Result(true, true);
+        }
         Calendar c = Calendar.getInstance();
         c.set(Calendar.HOUR_OF_DAY, hour24);
         c.set(Calendar.MINUTE, minute);
@@ -63,7 +75,7 @@ public class AlarmTimer {
                 message == null || message.isEmpty()
                         ? String.format("Будильник на %02d:%02d", hour24, minute)
                         : message);
-        return new Result(sys || own, sys);
+        return new Result(own, false);
     }
 
     private boolean trySystemTimer(int seconds, String message) {
