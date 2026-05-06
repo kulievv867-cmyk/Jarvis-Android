@@ -38,6 +38,13 @@
     <string name="setting_key_desc">Используется для расширенных ответов и сводок памяти. Ключ хранится локально в приложении.</string>
     <string name="setting_use_llm">Использовать нейросеть для непонятых команд</string>
     <string name="setting_reverb">Реверберация голоса (зал)</string>
+    <string name="setting_use_whisper">Точное распознавание (Whisper-large-turbo)</string>
+    <string name="setting_use_whisper_desc">Включает оффлайн-модель Whisper-large-v3-turbo для повторного распознавания каждой команды. Точность кардинально выше (имена, бренды, английские слова, акценты), но добавляет 3–10 секунд задержки на команду в зависимости от телефона. На устройствах с ≤4 ГБ RAM может тормозить.\n\nПри первом включении модель скачается с huggingface.co (~547 МБ, нужен Wi-Fi). Хранится локально в приложении, потом всё работает оффлайн.</string>
+    <string name="setting_use_whisper_delete">Удалить модель Whisper (освободить ~547 МБ)</string>
+    <string name="setting_use_whisper_downloading">Скачиваю модель Whisper: %1$d %% (%2$s / %3$s)</string>
+    <string name="setting_use_whisper_ready">Модель Whisper готова — точное распознавание включено.</string>
+    <string name="setting_use_whisper_failed">Не удалось загрузить Whisper: %1$s</string>
+    <string name="setting_use_whisper_deleted">Модель Whisper удалена.</string>
     <string name="clear_memory">Очистить память диалога</string>
     <string name="memory_cleared">Память очищена</string>
 

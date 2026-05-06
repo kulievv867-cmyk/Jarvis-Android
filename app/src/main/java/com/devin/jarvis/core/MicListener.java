@@ -71,6 +71,16 @@ public class MicListener {
     private String lastPartial = "";
     private long lastLevelStatusMs = 0;
 
+    // Rolling PCM-16 ring buffer of the last ~14 s of mic audio. Used by the
+    // optional Whisper re-transcription path to grab a complete utterance
+    // *after* Vosk has signalled end-of-speech. Always allocated (~448 KB)
+    // because the cost is trivial and toggling it on/off would race with the
+    // capture thread.
+    private static final int RING_SECONDS = 14;
+    private final short[] pcmRing = new short[SAMPLE_RATE * RING_SECONDS];
+    private int pcmRingWrite = 0;          // monotonically-increasing total samples written
+    private final Object pcmRingLock = new Object();
+
     public MicListener(Context ctx, Settings settings) {
         this.ctx = ctx.getApplicationContext();
         this.settings = settings;
@@ -336,6 +346,11 @@ public class MicListener {
                 continue;
             }
 
+            // Mirror the captured PCM into the rolling ring so Whisper can
+            // re-transcribe the last few seconds when Vosk fires onResult.
+            // Each sample is 2 bytes (PCM-16 little-endian).
+            appendToRing(buf, n);
+
             try {
                 if (recognizer.acceptWaveForm(buf, n)) {
                     String json = recognizer.getResult();
@@ -409,6 +424,47 @@ public class MicListener {
             Log.w(TAG, "Failed to reopen AudioRecord after mute", t);
             running.set(false);
             postError(-5, "audio_record_reopen_failed");
+        }
+    }
+
+    /** Mirror raw PCM-16 mic bytes into the rolling buffer. */
+    private void appendToRing(byte[] buf, int byteCount) {
+        int sampleCount = byteCount / 2;
+        if (sampleCount <= 0) return;
+        synchronized (pcmRingLock) {
+            int ringLen = pcmRing.length;
+            for (int i = 0; i < sampleCount; i++) {
+                int lo = buf[i * 2]     & 0xFF;
+                int hi = buf[i * 2 + 1] & 0xFF;
+                short s = (short) ((hi << 8) | lo);
+                pcmRing[(pcmRingWrite + i) % ringLen] = s;
+            }
+            pcmRingWrite += sampleCount;
+        }
+    }
+
+    /**
+     * Returns up to the last {@code seconds} seconds of mic audio captured so
+     * far, as a freshly-allocated PCM-16 mono 16 kHz buffer. Returns an empty
+     * array if nothing has been captured yet. Safe to call from any thread.
+     */
+    public short[] lastPcm16(int seconds) {
+        if (seconds <= 0) return new short[0];
+        if (seconds > RING_SECONDS) seconds = RING_SECONDS;
+        int wanted = SAMPLE_RATE * seconds;
+        synchronized (pcmRingLock) {
+            int have = Math.min(pcmRingWrite, pcmRing.length);
+            int n = Math.min(wanted, have);
+            if (n <= 0) return new short[0];
+            short[] out = new short[n];
+            int ringLen = pcmRing.length;
+            int startIdx = pcmRingWrite - n;
+            for (int i = 0; i < n; i++) {
+                int idx = (startIdx + i) % ringLen;
+                if (idx < 0) idx += ringLen;
+                out[i] = pcmRing[idx];
+            }
+            return out;
         }
     }
 
