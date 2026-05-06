@@ -43,8 +43,12 @@ public class EdgeTts {
             + "(KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0";
     private static final String ORIGIN = "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold";
 
-    /** Voice short-names from Microsoft's catalog (free). */
-    public static final String VOICE_BRITISH_MALE = "en-GB-RyanNeural";
+    /** Voice short-names from Microsoft's catalog (free).
+     *
+     *  Thomas is an older, mid-baritone British voice — closer to the
+     *  Paul-Bettany "calm butler" register than Ryan's lighter delivery,
+     *  which the user described as "не похоже на Джарвиса". */
+    public static final String VOICE_BRITISH_MALE = "en-GB-ThomasNeural";
     public static final String VOICE_RUSSIAN_MALE = "ru-RU-DmitryNeural";
 
     /** Output format negotiated with the server; only MP3 is supported. */

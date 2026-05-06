@@ -38,6 +38,18 @@
     <string name="setting_key_desc">Используется для расширенных ответов и сводок памяти. Ключ хранится локально в приложении.</string>
     <string name="setting_use_llm">Использовать нейросеть для непонятых команд</string>
     <string name="setting_reverb">Реверберация голоса (зал)</string>
+    <string name="setting_use_whisper">Точное распознавание (Whisper)</string>
+    <string name="setting_use_whisper_desc">Включает оффлайн-модель Whisper для повторного распознавания каждой команды. Точность ощутимо выше Vosk-small (имена, бренды, английские слова, акценты), но добавляет задержку на каждую команду — её величина зависит от выбранной модели ниже.\n\nПри первом включении модель скачается с huggingface.co (нужен Wi-Fi). Хранится локально в приложении, потом всё работает оффлайн.</string>
+    <string name="setting_use_whisper_delete">Удалить модель Whisper (освободить место)</string>
+    <string name="setting_use_whisper_downloading">Скачиваю модель Whisper: %1$d %% (%2$s / %3$s)</string>
+    <string name="setting_use_whisper_ready">Модель Whisper готова — точное распознавание включено.</string>
+    <string name="setting_use_whisper_failed">Не удалось загрузить Whisper: %1$s</string>
+    <string name="setting_use_whisper_deleted">Модель Whisper удалена.</string>
+    <string name="setting_whisper_model_label">Размер модели Whisper</string>
+    <string name="setting_whisper_model_desc">Base (~57 МБ): быстрее всего (~0.5–1 сек на флагмане), точность ниже на русском. Small (~181 МБ): сбалансированный (~1–2 сек), хорошая точность. Large-v3-turbo (~547 МБ): максимальная точность, но 3–5 сек на команду. По умолчанию — Base.\n\nСмена модели — переустановка: предыдущая будет удалена при включении новой.</string>
+    <string name="setting_whisper_model_base">Base — быстро (~57 МБ, ~1 сек)</string>
+    <string name="setting_whisper_model_small">Small — баланс (~181 МБ, ~1–2 сек)</string>
+    <string name="setting_whisper_model_large">Large-v3-turbo — точно (~547 МБ, 3–5 сек)</string>
     <string name="clear_memory">Очистить память диалога</string>
     <string name="memory_cleared">Память очищена</string>
 

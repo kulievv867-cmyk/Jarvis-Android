@@ -137,6 +137,64 @@
             android:layout_height="wrap_content"
             android:text="@string/setting_reverb"
             android:textColor="?attr/jTextPrimary"
+            android:layout_marginBottom="12dp" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/whisperSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_use_whisper"
+            android:textColor="?attr/jTextPrimary"
+            android:layout_marginBottom="2dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_use_whisper_desc"
+            android:textColor="?attr/jTextSecondary"
+            android:textSize="12sp"
+            android:paddingBottom="6dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_whisper_model_label"
+            android:textColor="?attr/jTextPrimary"
+            android:textSize="13sp"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp" />
+
+        <Spinner
+            android:id="@+id/whisperModelSpinner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="6dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_whisper_model_desc"
+            android:textColor="?attr/jTextSecondary"
+            android:textSize="11sp"
+            android:paddingBottom="6dp" />
+
+        <TextView
+            android:id="@+id/whisperStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="?attr/jAccent"
+            android:textSize="12sp"
+            android:visibility="gone"
+            android:paddingBottom="4dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/whisperDeleteBtn"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_use_whisper_delete"
+            android:visibility="gone"
             android:layout_marginBottom="20dp" />
 
         <TextView
