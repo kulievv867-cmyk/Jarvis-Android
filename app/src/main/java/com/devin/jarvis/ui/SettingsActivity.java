@@ -34,6 +34,10 @@ public class SettingsActivity extends AppCompatActivity {
     private MaterialSwitch llmSwitch;
     private MaterialSwitch reverbSwitch;
     private MaterialSwitch modulationSwitch;
+    private MaterialSwitch whisperSwitch;
+    private TextView whisperStatus;
+    private MaterialButton whisperDeleteBtn;
+    private com.devin.jarvis.voice.WhisperRecognizer.ProgressListener whisperProgress;
     private EditText userNameEdit;
     private EditText userCityEdit;
     private EditText userCountryEdit;
@@ -65,6 +69,9 @@ public class SettingsActivity extends AppCompatActivity {
         llmSwitch = findViewById(R.id.llmSwitch);
         reverbSwitch = findViewById(R.id.reverbSwitch);
         modulationSwitch = findViewById(R.id.modulationSwitch);
+        whisperSwitch = findViewById(R.id.whisperSwitch);
+        whisperStatus = findViewById(R.id.whisperStatus);
+        whisperDeleteBtn = findViewById(R.id.whisperDeleteBtn);
         userNameEdit = findViewById(R.id.userNameEdit);
         userCityEdit = findViewById(R.id.userCityEdit);
         userCountryEdit = findViewById(R.id.userCountryEdit);
@@ -133,6 +140,57 @@ public class SettingsActivity extends AppCompatActivity {
         modulationSwitch.setChecked(settings.modulation());
         modulationSwitch.setOnCheckedChangeListener((CompoundButton b, boolean v) -> settings.setModulation(v));
 
+        whisperSwitch.setChecked(settings.useWhisper());
+        whisperSwitch.setOnCheckedChangeListener((CompoundButton b, boolean v) -> {
+            settings.setUseWhisper(v);
+            if (v) {
+                // Begin model download/load if not already cached.
+                com.devin.jarvis.voice.WhisperRecognizer.get(this).loadAsync();
+                refreshWhisperStatus();
+            } else {
+                whisperStatus.setVisibility(View.GONE);
+                refreshWhisperStatus();
+            }
+        });
+
+        whisperProgress = new com.devin.jarvis.voice.WhisperRecognizer.ProgressListener() {
+            @Override public void onProgress(long downloaded, long total) {
+                if (whisperStatus == null) return;
+                int pct = total > 0 ? (int) (downloaded * 100L / total) : 0;
+                String human = humanBytes(downloaded) + " / " + humanBytes(total);
+                whisperStatus.setVisibility(View.VISIBLE);
+                whisperStatus.setText(getString(R.string.setting_use_whisper_downloading, pct,
+                        humanBytes(downloaded), humanBytes(total)));
+            }
+            @Override public void onReady() {
+                if (whisperStatus == null) return;
+                whisperStatus.setVisibility(View.VISIBLE);
+                whisperStatus.setText(R.string.setting_use_whisper_ready);
+                refreshWhisperStatus();
+            }
+            @Override public void onError(String message) {
+                if (whisperStatus == null) return;
+                whisperStatus.setVisibility(View.VISIBLE);
+                whisperStatus.setText(getString(R.string.setting_use_whisper_failed,
+                        message == null ? "?" : message));
+            }
+        };
+        com.devin.jarvis.voice.WhisperRecognizer.get(this).addProgressListener(whisperProgress);
+
+        whisperDeleteBtn.setOnClickListener(v -> {
+            com.devin.jarvis.voice.WhisperRecognizer w =
+                    com.devin.jarvis.voice.WhisperRecognizer.get(this);
+            w.deleteCachedModel();
+            Toast.makeText(this, R.string.setting_use_whisper_deleted, Toast.LENGTH_SHORT).show();
+            // Force the user to re-enable to re-download.
+            settings.setUseWhisper(false);
+            whisperSwitch.setChecked(false);
+            whisperStatus.setVisibility(View.GONE);
+            refreshWhisperStatus();
+        });
+
+        refreshWhisperStatus();
+
         userNameEdit.setText(settings.userName());
         userCityEdit.setText(settings.userCity());
         userCountryEdit.setText(settings.userCountry());
@@ -189,5 +247,40 @@ public class SettingsActivity extends AppCompatActivity {
     private static String mask(String key) {
         if (key == null || key.length() < 8) return "****";
         return key.substring(0, 6) + "…" + key.substring(key.length() - 4);
+    }
+
+    private void refreshWhisperStatus() {
+        com.devin.jarvis.voice.WhisperRecognizer w =
+                com.devin.jarvis.voice.WhisperRecognizer.get(this);
+        boolean haveModel = w.isModelDownloaded();
+        boolean enabled   = settings.useWhisper();
+        whisperDeleteBtn.setVisibility(haveModel ? View.VISIBLE : View.GONE);
+        if (enabled && haveModel && !w.isReady() && !w.isDownloading()) {
+            // Cached but not yet loaded — kick a load so the next command uses
+            // it without delay.
+            w.loadAsync();
+        }
+        if (enabled && haveModel && w.isReady()) {
+            whisperStatus.setVisibility(View.VISIBLE);
+            whisperStatus.setText(R.string.setting_use_whisper_ready);
+        }
+    }
+
+    private static String humanBytes(long b) {
+        if (b < 1024) return b + " B";
+        if (b < 1024L * 1024) return String.format("%.0f KB", b / 1024.0);
+        if (b < 1024L * 1024 * 1024) return String.format("%.0f MB", b / 1048576.0);
+        return String.format("%.2f GB", b / 1073741824.0);
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (whisperProgress != null) {
+            try {
+                com.devin.jarvis.voice.WhisperRecognizer.get(this)
+                        .removeProgressListener(whisperProgress);
+            } catch (Throwable ignored) {}
+        }
+        super.onDestroy();
     }
 }

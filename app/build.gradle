@@ -5,6 +5,7 @@ plugins {
 android {
     namespace 'com.devin.jarvis'
     compileSdk 34
+    ndkVersion '26.1.10909125'
 
     defaultConfig {
         applicationId "com.devin.jarvis"
@@ -23,6 +24,21 @@ android {
         ndk {
             abiFilters 'armeabi-v7a', 'arm64-v8a'
         }
+
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_shared',
+                          '-DCMAKE_BUILD_TYPE=Release'
+                cppFlags '-std=c++17', '-fexceptions', '-frtti'
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+            version '3.22.1'
+        }
     }
 
     buildFeatures {
@@ -35,8 +51,9 @@ android {
     androidResources {
         // Vosk model files are mostly already-compressed binary; tell AAPT not
         // to recompress them so install-time extraction stays fast and direct.
+        // .bin = whisper.cpp ggml model files (also already-quantized).
         noCompress 'mdl', 'fst', 'tcsr', 'final', 'fstm', 'tree',
-                'ie', 'mat', 'dubm', 'int', 'conf', 'stats'
+                'ie', 'mat', 'dubm', 'int', 'conf', 'stats', 'bin'
     }
     packagingOptions {
         jniLibs {
