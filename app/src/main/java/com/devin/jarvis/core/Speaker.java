@@ -48,6 +48,10 @@ public class Speaker {
     /** Append a chunk to the speech queue without interrupting playback. */
     public void speakAppend(String text) { voice.speakAppend(text); }
 
+    /** Pre-render common ack phrases into the TTS cache. See
+     *  {@link JarvisVoice#prewarmCommonPhrases()}. */
+    public void prewarmCommonPhrases() { voice.prewarmCommonPhrases(); }
+
     public void stop() { voice.stop(); }
 
     public void shutdown() { voice.shutdown(); }

@@ -29,6 +29,7 @@ public class Intents {
         NOTES_ADD,         // "запиши заметку про отчёт"
         NOTES_READ,        // "прочитай заметки"
         NOTES_DELETE,      // "удали заметку про отчёт"
+        WEATHER,           // "прогноз погоды", "погода в Москве" — direct yandex.ru fetch, no LLM needed
         UNKNOWN,
     }
 
@@ -253,6 +254,17 @@ public class Intents {
                     + "|открой\\s+календарь"
                     + ")\\b.*");
 
+    /**
+     * Прямой запрос погоды. Капчурим имя города в group(1) если оно есть
+     * («погода в Москве»), иначе пустая группа = используем
+     * {@link Settings#userCity()} (по умолчанию Краснодар).
+     */
+    private static final Pattern WEATHER_RU = Pattern.compile(
+            "(?iu)^(?:какая\\s+(?:сейчас\\s+)?)?"
+                    + "(?:погода|прогноз(?:\\s+погоды)?|на\\s+улице|за\\s+окном|тепло\\s+ли|холодно\\s+ли)"
+                    + "(?:\\s+(?:сейчас|сегодня|на\\s+сегодня|на\\s+завтра|в\\s+краснодаре|в\\s+москве))?"
+                    + "(?:\\s+в\\s+([\\p{L}\\-\\s]+?))?\\s*[?.!]*$");
+
     // ---------- English patterns ----------
 
     private static final Pattern OPEN_EN = Pattern.compile(
@@ -306,6 +318,11 @@ public class Intents {
     private static final Pattern CAL_QUERY_EN = Pattern.compile(
             "(?i)^(?:what(?:'s| is)?\\s+(?:on\\s+my\\s+calendar|my\\s+schedule)|show\\s+(?:my\\s+)?calendar|list\\s+(?:my\\s+)?(?:meetings|events)|when\\s+(?:is|are)\\s+my\\s+(?:next\\s+)?(?:meeting|event)s?)\\b.*");
 
+    private static final Pattern WEATHER_EN = Pattern.compile(
+            "(?i)^(?:what(?:'s| is)?\\s+the\\s+)?(?:weather|forecast|temperature)"
+                    + "(?:\\s+(?:like\\s+)?(?:today|tomorrow|now|outside))?"
+                    + "(?:\\s+in\\s+([\\p{L}\\-\\s]+?))?\\s*[?.!]*$");
+
     public static Parsed parse(String text, String lang) {
         Parsed p = new Parsed();
         p.raw = text;
@@ -327,6 +344,10 @@ public class Intents {
             if (matchEmailSendRu(text, p)) { p.type = Type.EMAIL_SEND; return p; }
             if (matchCalendarCreateRu(text, p)) { p.type = Type.CALENDAR_CREATE; return p; }
             if (matchCalendarQueryRu(text, p)) { p.type = Type.CALENDAR_QUERY; return p; }
+            // Прямой запрос погоды → yandex.ru/pogoda без LLM. Должен идти
+            // ДО STOP_MUSIC, иначе фразу «прогноз погоды» (которая может
+            // звучать как тихая команда) сожрёт что-то ещё.
+            if (matchWeatherRu(text, p)) { p.type = Type.WEATHER; return p; }
             // STOP_MUSIC must run before CLOSE_APP because "выключи музыку"
             // would otherwise be parsed as "close the app called музыку".
             if (STOP_MUSIC_RU.matcher(text).find()) { p.type = Type.STOP_MUSIC; return p; }
@@ -360,6 +381,7 @@ public class Intents {
             if (matchEmailSendEn(text, p)) { p.type = Type.EMAIL_SEND; return p; }
             if (matchCalendarCreateEn(text, p)) { p.type = Type.CALENDAR_CREATE; return p; }
             if (matchCalendarQueryEn(text, p)) { p.type = Type.CALENDAR_QUERY; return p; }
+            if (matchWeatherEn(text, p)) { p.type = Type.WEATHER; return p; }
             if (STOP_MUSIC_EN.matcher(text).find()) { p.type = Type.STOP_MUSIC; return p; }
             if (com.devin.jarvis.commands.MusicService.isPlayingActive()
                     && STOP_MUSIC_EN_LOOSE.matcher(text).find()) {
@@ -525,6 +547,14 @@ public class Intents {
         p.arg1 = clean(t);
         return true;
     }
+    private static boolean matchWeatherRu(String t, Parsed p) {
+        Matcher m = WEATHER_RU.matcher(t); if (!m.find()) return false;
+        // arg1 = optional city; пусто/null означает «использовать
+        // settings.userCity()», по умолчанию Краснодар.
+        String city = m.groupCount() >= 1 ? m.group(1) : null;
+        p.arg1 = city == null ? "" : clean(city);
+        return true;
+    }
     private static boolean matchNotesAddEn(String t, Parsed p) {
         Matcher m = NOTES_ADD_EN.matcher(t); if (!m.find()) return false;
         p.arg1 = clean(m.group(1)); return p.arg1 != null && !p.arg1.isEmpty();
@@ -547,6 +577,12 @@ public class Intents {
     private static boolean matchCalendarQueryEn(String t, Parsed p) {
         Matcher m = CAL_QUERY_EN.matcher(t); if (!m.find()) return false;
         p.arg1 = clean(t);
+        return true;
+    }
+    private static boolean matchWeatherEn(String t, Parsed p) {
+        Matcher m = WEATHER_EN.matcher(t); if (!m.find()) return false;
+        String city = m.groupCount() >= 1 ? m.group(1) : null;
+        p.arg1 = city == null ? "" : clean(city);
         return true;
     }
 

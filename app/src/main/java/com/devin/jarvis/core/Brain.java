@@ -123,6 +123,7 @@ public class Brain {
             case EMAIL_SEND: doEmailSend(p.arg1, p.arg2); break;
             case CALENDAR_QUERY: doCalendarQuery(p.arg1); break;
             case CALENDAR_CREATE: doCalendarCreate(p.arg1); break;
+            case WEATHER: doWeather(p.arg1); break;
             case UNKNOWN:
             default:
                 doFallback(stripped);
@@ -426,6 +427,44 @@ public class Brain {
                 : Persona.calendarCreatedEn(title, when.startMs));
     }
 
+    /**
+     * Прямой запрос погоды без LLM. Идём на yandex.ru/pogoda с городом
+     * пользователя (по умолчанию Краснодар), всё через NetClient — то есть
+     * через прокси, если настроен. Это позволяет получать погоду даже
+     * когда OpenAI/Cloudflare недоступны или ключ не введён.
+     */
+    private void doWeather(String cityFromVoice) {
+        String city = cityFromVoice;
+        if (city == null || city.isEmpty() || city.equalsIgnoreCase("краснодаре")) {
+            city = (settings.userCity() != null && !settings.userCity().isEmpty())
+                    ? settings.userCity()
+                    : "Краснодар";
+        }
+        // Чуть-чуть нормализуем — пользователь часто говорит «в Краснодаре»,
+        // а API ждёт именительный падеж «Краснодар». Грубо, но работает для
+        // самых частых случаев.
+        if (city.endsWith("е") || city.endsWith("ё")) {
+            city = city.substring(0, city.length() - 1);
+        }
+        reply.status(ru() ? "Смотрю прогноз…" : "Checking the forecast...");
+        final String cityFinal = city;
+        new Thread(() -> {
+            try {
+                com.devin.jarvis.weather.YandexWeather.Snapshot snap =
+                        com.devin.jarvis.weather.YandexWeather.fetch(cityFinal, settings);
+                if (snap == null) {
+                    say(ru() ? "Не получилось дотянуться до Яндекс Погоды. Если в вашем регионе блокировки — включите прокси в настройках."
+                            : "Couldn't reach Yandex Weather. If your region has blocks, enable a proxy in Settings.");
+                    return;
+                }
+                say(ru() ? snap.renderRu() : snap.renderEn());
+            } catch (Throwable t) {
+                say(ru() ? "Не получилось получить прогноз: " + t.getMessage()
+                        : "Couldn't fetch forecast: " + t.getMessage());
+            }
+        }, "Jarvis-Weather").start();
+    }
+
     private void doFallback(String userText) {
         if (settings.useLlm() && llm.hasKey()) {
             reply.status(ru() ? "Думаю…" : "Thinking...");
@@ -447,9 +486,19 @@ public class Brain {
                 }
             });
         } else {
-            say(ru()
-                    ? "Не понял команду. Скажите «Джарвис, что ты умеешь», чтобы я перечислил возможности."
-                    : "I didn't catch that. Say \"Jarvis, help\" to hear what I can do.");
+            // Нет API-ключа (или нейросеть выключена) — даём конкретное
+            // указание что сделать, а не отправляем пользователя в HELP-цикл.
+            String why;
+            if (!settings.useLlm()) {
+                why = ru()
+                        ? "Нейросеть выключена в настройках. Включите «Использовать нейросеть» — и я смогу отвечать на свободные вопросы."
+                        : "LLM is disabled in settings. Enable it to answer free-form questions.";
+            } else {
+                why = ru()
+                        ? "Чтобы я отвечал на свободные вопросы, нужен API-ключ OpenAI (или OpenRouter, начинается на sk-or-). Откройте Настройки и впишите ключ — после этого спросите ещё раз."
+                        : "I need an API key to answer free-form questions. Open Settings, paste an OpenAI or OpenRouter key, then ask again.";
+            }
+            say(why);
         }
     }
 

@@ -135,6 +135,9 @@ public class JarvisService extends Service implements Brain.ReplyHandler {
         started = true;
 
         speaker = new Speaker(this, settings.modulation(), settings.ttsReverb(), null);
+        // Pre-render the very common ack phrases so the first reply after a
+        // wake-word doesn't pay the Edge TTS network round-trip.
+        try { speaker.prewarmCommonPhrases(); } catch (Throwable ignored) {}
 
         listener = new MicListener(this, settings);
         listener.setCallback(new MicListener.Callback() {

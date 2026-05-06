@@ -30,12 +30,16 @@ public class OpenAiClient {
 
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 
-    private final String apiKey;
-    private final String baseUrl;
-    private final String model;
-    private final boolean isOpenRouter;
+    /** Settings handle so we can re-read the API key on every call.
+     *  Caching it at construction time was a long-standing bug: users who
+     *  added their key in Settings AFTER service start kept hitting the
+     *  no-key branch forever, because Brain only constructs OpenAiClient
+     *  once. */
+    private final Settings settingsRef;
     private final OkHttpClient http;
     private final LongMemory longMemory;
+    /** Initial fallback for the legacy {@link #OpenAiClient(String)} ctor. */
+    private final String legacyKey;
 
     public OpenAiClient(String apiKey) {
         this(apiKey, null, null);
@@ -47,17 +51,8 @@ public class OpenAiClient {
 
     public OpenAiClient(String apiKey, Settings settings, LongMemory longMemory) {
         this.longMemory = longMemory;
-        this.apiKey = apiKey == null ? "" : apiKey.trim();
-        // Auto-detect provider: OpenRouter keys start with "sk-or-".
-        if (this.apiKey.startsWith("sk-or-")) {
-            this.baseUrl = "https://openrouter.ai/api/v1/chat/completions";
-            this.model = "openai/gpt-4o-mini";
-            this.isOpenRouter = true;
-        } else {
-            this.baseUrl = "https://api.openai.com/v1/chat/completions";
-            this.model = "gpt-4o-mini";
-            this.isOpenRouter = false;
-        }
+        this.settingsRef = settings;
+        this.legacyKey = apiKey == null ? "" : apiKey.trim();
         OkHttpClient.Builder b = settings != null
                 ? NetClient.okhttpBuilder(settings)
                 : new OkHttpClient.Builder();
@@ -72,7 +67,29 @@ public class OpenAiClient {
                 .build();
     }
 
-    public boolean hasKey() { return !apiKey.isEmpty(); }
+    /** Re-reads the API key from {@link Settings} on every call so changes
+     *  in the UI take effect without restarting the service. */
+    private String currentKey() {
+        if (settingsRef != null) {
+            String k = settingsRef.openAiKey();
+            if (k != null && !k.trim().isEmpty()) return k.trim();
+        }
+        return legacyKey;
+    }
+
+    private boolean isOpenRouter(String key) { return key != null && key.startsWith("sk-or-"); }
+
+    private String baseUrlFor(String key) {
+        return isOpenRouter(key)
+                ? "https://openrouter.ai/api/v1/chat/completions"
+                : "https://api.openai.com/v1/chat/completions";
+    }
+
+    private String modelFor(String key) {
+        return isOpenRouter(key) ? "openai/gpt-4o-mini" : "gpt-4o-mini";
+    }
+
+    public boolean hasKey() { return !currentKey().isEmpty(); }
 
     public interface Callback {
         void onReply(String reply);
@@ -284,7 +301,7 @@ public class OpenAiClient {
         messages.put(u);
 
         JSONObject body = new JSONObject();
-        body.put("model", model);
+        body.put("model", modelFor(currentKey()));
         body.put("messages", messages);
         body.put("temperature", 0.6);
         body.put("max_tokens", 250);
@@ -292,11 +309,12 @@ public class OpenAiClient {
     }
 
     private Request buildRequest(JSONObject body) {
+        String key = currentKey();
         Request.Builder rb = new Request.Builder()
-                .url(baseUrl)
-                .header("Authorization", "Bearer " + apiKey)
+                .url(baseUrlFor(key))
+                .header("Authorization", "Bearer " + key)
                 .post(RequestBody.create(body.toString(), JSON));
-        if (isOpenRouter) {
+        if (isOpenRouter(key)) {
             rb.header("HTTP-Referer", "https://github.com/devin/jarvis-android");
             rb.header("X-Title", "Jarvis Android");
         }
@@ -328,7 +346,7 @@ public class OpenAiClient {
                 messages.put(u);
 
                 JSONObject body = new JSONObject();
-                body.put("model", model);
+                body.put("model", modelFor(currentKey()));
                 body.put("messages", messages);
                 body.put("temperature", 0.2);
                 body.put("max_tokens", 200);

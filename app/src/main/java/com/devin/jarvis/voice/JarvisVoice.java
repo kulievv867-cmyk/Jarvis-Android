@@ -270,6 +270,67 @@ public class JarvisVoice {
     public boolean isReady() { return alive.get(); }
     public void setListener(Listener l) { this.listener = l; }
 
+    /**
+     * Pre-renders the very short phrases that Jarvis says repeatedly
+     * («Слушаю.», «Сэр?», «Готово.», «Слушаю, сэр.» …) so that the first
+     * audible response after a wake-word feels instantaneous instead of
+     * being gated by the ~600–1500 ms Edge TTS round-trip. Cached MP3 is
+     * keyed by (text, voice, rate, pitch); subsequent renders are a
+     * sub-50 ms disk read.
+     *
+     * Runs on its own daemon thread so service startup is not blocked.
+     */
+    public void prewarmCommonPhrases() {
+        if (cache == null || edge == null) return;
+        Thread t = new Thread(() -> {
+            try {
+                String[] phrasesRu = new String[] {
+                        "Слушаю.", "Слушаю, сэр.", "Сэр?", "Да, сэр.",
+                        "Готово.", "Сделано.", "Минуту.", "Записал.",
+                        "Конечно.", "Сейчас."
+                };
+                String[] phrasesEn = new String[] {
+                        "Yes, sir.", "Sir?", "Done.", "Right away.",
+                        "Listening.", "Of course.", "One moment.", "Noted."
+                };
+                String[] all = new String[phrasesRu.length + phrasesEn.length];
+                System.arraycopy(phrasesRu, 0, all, 0, phrasesRu.length);
+                System.arraycopy(phrasesEn, 0, all, phrasesRu.length, phrasesEn.length);
+                String rate = "-8%";
+                String pitch = "-2Hz";
+                for (String p : all) {
+                    if (!alive.get()) return;
+                    String voice = looksRussian(p)
+                            ? EdgeTts.VOICE_RUSSIAN_MALE
+                            : EdgeTts.VOICE_BRITISH_MALE;
+                    if (cache.get(p, voice, rate, pitch) != null) continue;
+                    try {
+                        byte[] mp3Bytes = edge.synthesize(p, voice, rate, pitch);
+                        if (mp3Bytes != null && mp3Bytes.length >= 64) {
+                            cache.put(p, voice, rate, pitch, mp3Bytes);
+                        }
+                    } catch (Throwable ignored) {
+                        // Network / proxy unavailable — skip silently and
+                        // keep going with the next phrase.
+                    }
+                }
+            } catch (Throwable t2) {
+                Log.w(TAG, "prewarm failed: " + t2.getMessage());
+            }
+        }, "Jarvis-Voice-Prewarm");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private static boolean looksRussian(String s) {
+        if (s == null) return false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c >= 0x0400 && c <= 0x04FF) return true;
+        }
+        return false;
+    }
+
     /** True iff there are no pending utterance chunks queued. */
     public boolean isQueueEmpty() { return requests.isEmpty(); }
 
