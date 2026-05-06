@@ -189,4 +189,88 @@ public final class Persona {
                 "No \"" + name + "\" installed, by the look of it.",
                 "I don't see an app named \"" + name + "\".");
     }
+
+    // ---- v3: notes / mail / calendar phrasing ----
+
+    public static String noteSavedRu() {
+        return pick("Заметка сохранена.",
+                "Записал.",
+                "Запомнил, заметка в списке.",
+                "Внесено в заметки.");
+    }
+    public static String noteSavedEn() {
+        return pick("Note saved.",
+                "Got it — added to notes.",
+                "Written down.",
+                "Stored in your notes.");
+    }
+    public static String noteDeletedRu(String snippet) {
+        String s = snippet == null ? "" : snippet.trim();
+        if (s.length() > 60) s = s.substring(0, 60) + "…";
+        if (s.isEmpty()) return pick("Заметка удалена.", "Готово, удалил.");
+        return pick("Удалил заметку «" + s + "».",
+                "Готово, заметки про «" + s + "» больше нет.");
+    }
+    public static String noteDeletedEn(String snippet) {
+        String s = snippet == null ? "" : snippet.trim();
+        if (s.length() > 60) s = s.substring(0, 60) + "…";
+        if (s.isEmpty()) return pick("Note deleted.", "Done, removed.");
+        return pick("Deleted the note about \"" + s + "\".",
+                "Removed: \"" + s + "\".");
+    }
+    /** Russian-correct word form for plural nouns: 1 заметка / 2 заметки / 5 заметок. */
+    public static String notesCountRu(int n) {
+        int abs = Math.abs(n);
+        int mod10 = abs % 10;
+        int mod100 = abs % 100;
+        if (mod10 == 1 && mod100 != 11) return "заметка";
+        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "заметки";
+        return "заметок";
+    }
+
+    public static String mailComposeRu(String to) {
+        return pick("Открыл письмо для " + to + ". Допишите и отправьте.",
+                "Готов черновик для " + to + ".",
+                "Письмо к " + to + " — текст можно дополнить.");
+    }
+    public static String mailComposeEn(String to) {
+        return pick("Drafted an email to " + to + ". Add the text and send.",
+                "Mail to " + to + " is ready for your edits.",
+                "Composed a message for " + to + ".");
+    }
+    public static String mailFoundContactRu(String name, String email) {
+        return pick("Нашёл " + name + " (" + email + "), открываю письмо.",
+                name + " — " + email + ", черновик готов.");
+    }
+    public static String mailFoundContactEn(String name, String email) {
+        return pick("Found " + name + " — " + email + ". Opening a draft.",
+                name + " resolved to " + email + ".");
+    }
+
+    public static String calendarSummaryRu(int count) {
+        if (count == 1) return "В этом окне одна встреча:";
+        if (count >= 2 && count <= 4) return "В этом окне " + count + " встречи:";
+        return "В этом окне " + count + " встреч:";
+    }
+    public static String calendarSummaryEn(int count) {
+        return count == 1 ? "One event:" : (count + " events:");
+    }
+    public static String calendarCreatedRu(String title, long startMs) {
+        java.util.Calendar c = java.util.Calendar.getInstance();
+        c.setTimeInMillis(startMs);
+        String hhmm = String.format("%02d:%02d", c.get(java.util.Calendar.HOUR_OF_DAY),
+                c.get(java.util.Calendar.MINUTE));
+        return pick("Записал «" + title + "» на " + hhmm + ".",
+                "Готово, " + hhmm + " — «" + title + "».",
+                "Создал встречу: «" + title + "», начало в " + hhmm + ".");
+    }
+    public static String calendarCreatedEn(String title, long startMs) {
+        java.util.Calendar c = java.util.Calendar.getInstance();
+        c.setTimeInMillis(startMs);
+        String hhmm = String.format("%02d:%02d", c.get(java.util.Calendar.HOUR_OF_DAY),
+                c.get(java.util.Calendar.MINUTE));
+        return pick("Created \"" + title + "\" at " + hhmm + ".",
+                "Booked \"" + title + "\" for " + hhmm + ".",
+                "Done — \"" + title + "\" at " + hhmm + ".");
+    }
 }

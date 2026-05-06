@@ -4,10 +4,15 @@ import android.content.Context;
 
 import com.devin.jarvis.commands.AlarmTimer;
 import com.devin.jarvis.commands.AppLauncher;
+import com.devin.jarvis.commands.CalendarHelper;
+import com.devin.jarvis.commands.MailComposer;
 import com.devin.jarvis.commands.MusicPlayer;
+import com.devin.jarvis.commands.Notes;
 import com.devin.jarvis.commands.ReminderManager;
 import com.devin.jarvis.commands.Translator;
 import com.devin.jarvis.llm.OpenAiClient;
+
+import java.util.List;
 
 /**
  * The decision center. Receives a user transcript, decides what to do,
@@ -41,6 +46,10 @@ public class Brain {
     private final ReminderManager reminders;
     private final MusicPlayer music;
     private final OpenAiClient llm;
+    private final Notes notes;
+    private final LongMemory longMemory;
+    private final CalendarHelper calendar;
+    private final MailComposer mailer;
 
     public Brain(Context ctx, Settings settings, Memory memory, ReplyHandler reply) {
         this.ctx = ctx.getApplicationContext();
@@ -52,7 +61,11 @@ public class Brain {
         this.alarmTimer = new AlarmTimer(this.ctx);
         this.reminders = new ReminderManager(this.ctx);
         this.music = new MusicPlayer(this.ctx);
-        this.llm = new OpenAiClient(settings.openAiKey());
+        this.notes = new Notes(this.ctx);
+        this.longMemory = new LongMemory(this.ctx);
+        this.calendar = new CalendarHelper(this.ctx);
+        this.mailer = new MailComposer(this.ctx);
+        this.llm = new OpenAiClient(settings.openAiKey(), settings, this.longMemory);
     }
 
     /** Called with the full raw transcript. Returns true if a wake word was found. */
@@ -104,6 +117,12 @@ public class Brain {
             case SHUTDOWN: reply.onShutdownRequested(); break;
             case WHO_ARE_YOU: doWhoAreYou(); break;
             case HELP: doHelp(); break;
+            case NOTES_ADD: doNotesAdd(p.arg1); break;
+            case NOTES_READ: doNotesRead(); break;
+            case NOTES_DELETE: doNotesDelete(p.arg1); break;
+            case EMAIL_SEND: doEmailSend(p.arg1, p.arg2); break;
+            case CALENDAR_QUERY: doCalendarQuery(p.arg1); break;
+            case CALENDAR_CREATE: doCalendarCreate(p.arg1); break;
             case UNKNOWN:
             default:
                 doFallback(stripped);
@@ -239,12 +258,186 @@ public class Brain {
                 : "I can open and close apps, translate, set timers, alarms and reminders, play music, and answer questions. Just say my name and ask.");
     }
 
+    // ---- v3 handlers ----
+
+    private void doNotesAdd(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            say(ru() ? "Что записать?" : "What should I write down?");
+            return;
+        }
+        long id = notes.add(text.trim());
+        if (id < 0) {
+            say(ru() ? "Не получилось сохранить." : "Couldn't save the note.");
+            return;
+        }
+        say(ru() ? Persona.noteSavedRu() : Persona.noteSavedEn());
+    }
+
+    private void doNotesRead() {
+        List<Notes.Note> all = notes.list();
+        if (all.isEmpty()) {
+            say(ru() ? "Заметок пока нет." : "You have no notes yet.");
+            return;
+        }
+        int n = Math.min(5, all.size());
+        StringBuilder sb = new StringBuilder();
+        sb.append(ru()
+                ? ("У вас " + all.size() + " " + Persona.notesCountRu(all.size()) + ". ")
+                : ("You have " + all.size() + (all.size() == 1 ? " note. " : " notes. ")));
+        sb.append(ru() ? "Последние: " : "Latest: ");
+        for (int i = 0; i < n; i++) {
+            if (i > 0) sb.append("; ");
+            sb.append(all.get(i).text);
+        }
+        sb.append('.');
+        say(sb.toString());
+    }
+
+    private void doNotesDelete(String query) {
+        boolean removed;
+        String snippet = null;
+        if (query == null || query.trim().isEmpty()) {
+            // «удали заметку» без квалификатора — сносим самую свежую.
+            List<Notes.Note> all = notes.list();
+            if (all.isEmpty()) {
+                say(ru() ? "Заметок нет." : "No notes to delete.");
+                return;
+            }
+            snippet = all.get(0).text;
+            removed = notes.deleteById(all.get(0).id);
+        } else {
+            snippet = notes.deleteByQuery(query.trim());
+            removed = snippet != null;
+        }
+        if (!removed) {
+            say(ru() ? "Ничего подходящего не нашёл." : "Nothing matching found.");
+            return;
+        }
+        say(ru() ? Persona.noteDeletedRu(snippet) : Persona.noteDeletedEn(snippet));
+    }
+
+    private void doEmailSend(String to, String subjectOrBody) {
+        if (to == null || to.trim().isEmpty()) {
+            say(ru() ? "Кому отправить письмо?" : "Whom should I email?");
+            return;
+        }
+        String trimmed = to.trim();
+        String address = trimmed.contains("@") ? trimmed : null;
+        String resolvedDisplayName = null;
+        if (address == null) {
+            MailComposer.ContactMatch hit = mailer.findContactEmail(trimmed);
+            if (hit != null) {
+                address = hit.email;
+                resolvedDisplayName = hit.displayName;
+            }
+        }
+        if (address == null || address.isEmpty()) {
+            // Открываем почтовый клиент с пустым адресатом и
+            // именем контакта в теме — пусть юзер выберёт вручную.
+            boolean ok = mailer.compose("",
+                    subjectOrBody == null ? "" : subjectOrBody,
+                    ru() ? ("Контакт: " + trimmed) : ("Contact: " + trimmed));
+            say(ru()
+                    ? (ok ? ("Адрес «" + trimmed + "» не нашёл в контактах. Открыл почту — введите ручно.")
+                            : "Не получилось открыть почту.")
+                    : (ok ? ("Couldn't find \"" + trimmed + "\" in contacts. Opened mail — fill in the address.")
+                            : "Couldn't open the mail app."));
+            return;
+        }
+        boolean ok = mailer.compose(address, subjectOrBody == null ? "" : subjectOrBody, "");
+        if (!ok) {
+            say(ru() ? "Не получилось открыть почту." : "Couldn't open the mail app.");
+            return;
+        }
+        String label = resolvedDisplayName != null ? resolvedDisplayName : address;
+        say(ru() ? Persona.mailComposeRu(label) : Persona.mailComposeEn(label));
+    }
+
+    private void doCalendarQuery(String raw) {
+        if (!calendar.canRead()) {
+            say(ru() ? "Нужно разрешение на календарь. Откройте настройки и выдайте доступ."
+                    : "I need calendar permission. Please grant it in app settings.");
+            return;
+        }
+        DateTimeParser.Result range = DateTimeParser.parseRu(raw);
+        long start, end;
+        if (range != null && range.startMs > 0) {
+            start = range.startMs;
+            end = range.endMs > range.startMs ? range.endMs : start + 24L * 3600_000;
+        } else {
+            // По умолчанию — следующие 24 часа.
+            start = System.currentTimeMillis();
+            end = start + 24L * 3600_000;
+        }
+        List<CalendarHelper.Event> events;
+        try {
+            events = calendar.listEvents(start, end);
+        } catch (SecurityException se) {
+            say(ru() ? "Нужно разрешение на календарь."
+                    : "I need calendar permission.");
+            return;
+        }
+        if (events == null || events.isEmpty()) {
+            say(ru() ? "На этот период встреч нет." : "No events on the calendar for that period.");
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(ru() ? Persona.calendarSummaryRu(events.size())
+                : Persona.calendarSummaryEn(events.size())).append(' ');
+        int max = Math.min(5, events.size());
+        for (int i = 0; i < max; i++) {
+            if (i > 0) sb.append("; ");
+            CalendarHelper.Event e = events.get(i);
+            sb.append(CalendarHelper.formatEventLine(e, ru()));
+        }
+        sb.append('.');
+        say(sb.toString());
+    }
+
+    private void doCalendarCreate(String raw) {
+        if (!calendar.canWrite()) {
+            say(ru() ? "Нужно разрешение на календарь. Откройте настройки и выдайте доступ."
+                    : "I need calendar permission. Please grant it in app settings.");
+            return;
+        }
+        DateTimeParser.Result when = DateTimeParser.parseRu(raw);
+        if (when == null || when.startMs <= 0) {
+            say(ru() ? "На какое время создать встречу?" : "What time should I create the meeting?");
+            return;
+        }
+        String title = DateTimeParser.stripDateTimeRu(raw);
+        if (title == null || title.trim().isEmpty()) title = ru() ? "Встреча" : "Meeting";
+        long durationMin = when.endMs > when.startMs
+                ? Math.max(15, (when.endMs - when.startMs) / 60_000L)
+                : 60L;
+        long id;
+        try {
+            id = calendar.createEvent(title, when.startMs, durationMin, null, null);
+        } catch (SecurityException se) {
+            say(ru() ? "Нужно разрешение на календарь."
+                    : "I need calendar permission.");
+            return;
+        }
+        if (id <= 0L) {
+            say(ru() ? "Не получилось создать встречу." : "Couldn't create the event.");
+            return;
+        }
+        say(ru() ? Persona.calendarCreatedRu(title, when.startMs)
+                : Persona.calendarCreatedEn(title, when.startMs));
+    }
+
     private void doFallback(String userText) {
         if (settings.useLlm() && llm.hasKey()) {
             reply.status(ru() ? "Думаю…" : "Thinking...");
             llm.chatAsync(userText, settings.language(), memory, settings, new OpenAiClient.Callback() {
                 @Override public void onReply(String r) {
-                    say(r);
+                    // Сначала вытаскиваем FACT-маркеры в долгую память,
+                    // потом убираем их из текста, чтобы Джарвис не озвучивал
+                    // служебные строки.
+                    if (settings.longMemory()) {
+                        try { longMemory.extractAndStoreFacts(r); } catch (Throwable ignored) {}
+                    }
+                    say(stripFactLines(r));
                     llm.updateSummaryAsync(memory, settings.language(), null);
                 }
                 @Override public void onError(String reason) {
@@ -266,6 +459,24 @@ public class Brain {
     }
 
     private boolean ru() { return "ru".equalsIgnoreCase(settings.language()); }
+
+    /** Removes "FACT: ..." marker lines from the LLM reply before TTS. */
+    private static String stripFactLines(String reply) {
+        if (reply == null || reply.isEmpty()) return reply;
+        String[] lines = reply.split("\\r?\\n");
+        StringBuilder out = new StringBuilder();
+        for (String line : lines) {
+            String stripped = line == null ? "" : line.replaceAll("^[\\s\\*\\-•]+", "").trim();
+            String upper = stripped.toUpperCase();
+            if (upper.startsWith("FACT:") || upper.startsWith("[FACT]")
+                    || upper.startsWith("FACT ") || upper.startsWith("\u0424\u0410\u041a\u0422:")) {
+                continue;
+            }
+            if (out.length() > 0) out.append('\n');
+            out.append(line);
+        }
+        return out.toString().trim();
+    }
 
     private static String humanDuration(int seconds) {
         if (seconds < 60) return seconds + " сек";

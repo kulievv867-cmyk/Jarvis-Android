@@ -8,6 +8,8 @@ import android.content.pm.ResolveInfo;
 import android.os.Build;
 import android.provider.AlarmClock;
 
+import com.devin.jarvis.core.Settings;
+
 import java.util.Calendar;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -33,35 +35,31 @@ public class AlarmTimer {
 
     public Result setTimer(int seconds, String message) {
         if (seconds <= 0) seconds = 60;
-        // 1) Try the system Clock app first (Google Clock, Mi Clock, Samsung
-        // Clock, etc. all handle ACTION_SET_TIMER). EXTRA_SKIP_UI=true makes
-        // the timer start without opening the clock app.
         boolean sys = trySystemTimer(seconds, message);
-        // 2) Only fall back to our own AlarmManager if the system Clock
-        // didn't accept the intent (no Clock app installed / unsupported
-        // ROM). Otherwise scheduling both would result in a double-alert
-        // 3 seconds apart at the trigger time.
-        if (sys) {
-            return new Result(true, true);
-        }
+        // Internal AlarmManager fallback: always run unless the user
+        // disabled it. We can't reliably tell whether the OEM Clock app
+        // actually saved the timer (Xiaomi/MIUI silently swallows the
+        // intent), so the safest contract is "timer always rings". The
+        // small risk of a duplicate ping ~1 sec apart on a working ROM is
+        // a fair trade for never silently missing a timer.
+        boolean fallback = new Settings(ctx).internalAlarmFallback();
+        if (sys && !fallback) return new Result(true, true);
         long triggerAt = System.currentTimeMillis() + seconds * 1000L;
         boolean own = schedule(triggerAt,
                 "Таймер истёк",
                 message == null || message.isEmpty()
                         ? humanDurationRu(seconds)
                         : message);
-        return new Result(own, false);
+        return new Result(sys || own, sys);
     }
 
     public Result setAlarm(int hour24, int minute, String message) {
         boolean sys = trySystemAlarm(hour24, minute, message);
-        // Same reasoning as setTimer: only fall back to internal AlarmManager
-        // when the system Clock app isn't around to take ownership of the
-        // alarm. Otherwise the user would get one notification from the
-        // Clock app and a second one (3 sec internal ping) from us.
-        if (sys) {
-            return new Result(true, true);
-        }
+        // Internal fallback: same logic as setTimer. Many users (especially
+        // on MIUI/HyperOS/EMUI) reported the assistant cheerfully saying
+        // "alarm set" while no alarm appears in the system Clock — the OEM
+        // ate the intent. Internal AlarmManager is what saves them.
+        boolean fallback = new Settings(ctx).internalAlarmFallback();
         Calendar c = Calendar.getInstance();
         c.set(Calendar.HOUR_OF_DAY, hour24);
         c.set(Calendar.MINUTE, minute);
@@ -70,12 +68,13 @@ public class AlarmTimer {
         if (c.getTimeInMillis() <= System.currentTimeMillis()) {
             c.add(Calendar.DAY_OF_YEAR, 1);
         }
+        if (sys && !fallback) return new Result(true, true);
         boolean own = schedule(c.getTimeInMillis(),
                 "Будильник",
                 message == null || message.isEmpty()
                         ? String.format("Будильник на %02d:%02d", hour24, minute)
                         : message);
-        return new Result(own, false);
+        return new Result(sys || own, sys);
     }
 
     private boolean trySystemTimer(int seconds, String message) {

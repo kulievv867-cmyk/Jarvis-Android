@@ -84,4 +84,23 @@
     <string name="theme_graphite">Тёмная (графит)</string>
     <string name="theme_light">Светлая (тёплая)</string>
     <string name="theme_change_note">Применится после перехода на главный экран</string>
+
+    <!-- v3: long-term memory / fast TTS / proxy / alarm fallback -->
+    <string name="setting_v3_section">Расширенные функции</string>
+    <string name="setting_long_memory">Долгая память (помнит факты о вас)</string>
+    <string name="setting_long_memory_desc">Джарвис будет извлекать постоянные факты о вас из ответов нейросети (имя, город, имена близких) и подмешивать их в системный промпт. Хранится только локально на телефоне.</string>
+    <string name="setting_fast_tts">Быстрый TTS (системный голос)</string>
+    <string name="setting_fast_tts_desc">Использует встроенный Android TTS вместо Edge TTS — задержка ~100 мс вместо ~500–1500 мс. Голос менее «джарвисовый», но мгновенный. Edge TTS остаётся для длинных ответов.</string>
+    <string name="setting_internal_alarm">Резервный будильник внутри Джарвиса</string>
+    <string name="setting_internal_alarm_desc">Если системные «Часы» не показывают созданный будильник — Джарвис продублирует его внутренним AlarmManager и точно разбудит.</string>
+    <string name="setting_proxy_section">Прокси / VPN</string>
+    <string name="setting_proxy_desc">Все сетевые вызовы (OpenAI, Edge TTS, Whisper, погода) пойдут через указанный прокси. Полезно если ваш оператор блокирует Cloudflare/ChatGPT (Россия и др.).</string>
+    <string name="setting_use_proxy">Включить прокси</string>
+    <string name="setting_proxy_url_hint">socks5://host:port  или  http://user:pass@host:8080</string>
+    <string name="setting_proxy_test">Тест выбранного прокси</string>
+    <string name="setting_proxy_discover">Подобрать бесплатный прокси (тест ~15 сек)</string>
+    <string name="setting_proxy_picked">Выбранный прокси: %1$s (%2$d мс)</string>
+    <string name="setting_proxy_test_ok">Прокси отвечает за %1$d мс</string>
+    <string name="setting_proxy_test_fail">Прокси недоступен: %1$s</string>
+    <string name="setting_proxy_warning">Внимание: бесплатные прокси нестабильны и могут видеть метаданные ваших соединений. Для серьёзной работы поднимите свой VPS с Shadowsocks/SOCKS5 за ~$3/мес.</string>
 </resources>

@@ -64,13 +64,16 @@ public class JarvisVoice {
     private volatile AudioTrack currentTrack;
     private volatile Settings settings;
 
-    private final EdgeTts edge = new EdgeTts();
+    private final EdgeTts edge;
     private final Mp3Decoder mp3 = new Mp3Decoder();
+    private final TtsCache cache;
 
     public JarvisVoice(Context ctx, boolean modulation, Runnable onReady) {
         this.ctx = ctx.getApplicationContext();
         this.modulationEnabled = modulation;
         this.settings = new Settings(this.ctx);
+        this.edge = new EdgeTts(this.settings);
+        this.cache = new TtsCache(this.ctx);
 
         // System TTS is initialized only as a fallback. We don't fail-hard if
         // it can't init — Edge TTS is our primary backend.
@@ -123,7 +126,16 @@ public class JarvisVoice {
                 Listener l = listener;
                 if (l != null) l.onSpeechStart();
                 try {
-                    boolean played = synthesizeAndPlayViaEdge(text);
+                    // "Fast TTS" mode: use Android's on-device TTS engine
+                    // directly. Synthesis is ~100 ms vs Edge's ~500–1500 ms
+                    // network round-trip. Sacrifices the cinematic British
+                    // butler character for snappy responsiveness.
+                    boolean played = false;
+                    if (settings != null && settings.fastTts()) {
+                        synthesizeAndPlayViaSystem(text);
+                        played = true;
+                    }
+                    if (!played) played = synthesizeAndPlayViaEdge(text);
                     if (!played) {
                         synthesizeAndPlayViaSystem(text);
                     }
@@ -143,10 +155,25 @@ public class JarvisVoice {
             String voice = "ru".equalsIgnoreCase(settings.language())
                     ? EdgeTts.VOICE_RUSSIAN_MALE
                     : EdgeTts.VOICE_BRITISH_MALE;
-            // Slow + slightly lower pitch puts Edge TTS into "calm British
-            // butler" territory — closer to film-Jarvis than the default
-            // perky news-reader cadence.
-            byte[] mp3Bytes = edge.synthesize(text, voice, "-8%", "-2Hz");
+            String rate = "-8%";
+            String pitch = "-2Hz";
+            byte[] mp3Bytes = null;
+            // Disk cache: short, frequently-spoken phrases («Слушаю.»,
+            // «Готово.», «Открываю Telegram.») get re-rendered the
+            // same way every time. Caching the MP3 by content+voice cuts
+            // perceived latency for these acks from ~700 ms to <50 ms.
+            if (cache != null && cache.isCacheable(text)) {
+                mp3Bytes = cache.get(text, voice, rate, pitch);
+            }
+            if (mp3Bytes == null) {
+                // Slow + slightly lower pitch puts Edge TTS into "calm British
+                // butler" territory — closer to film-Jarvis than the default
+                // perky news-reader cadence.
+                mp3Bytes = edge.synthesize(text, voice, rate, pitch);
+                if (cache != null && mp3Bytes != null && cache.isCacheable(text)) {
+                    cache.put(text, voice, rate, pitch, mp3Bytes);
+                }
+            }
             if (mp3Bytes == null || mp3Bytes.length < 64) {
                 Log.w(TAG, "Edge TTS returned no audio");
                 return false;

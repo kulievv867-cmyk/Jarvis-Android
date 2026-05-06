@@ -22,17 +22,26 @@ public class Intents {
         SHUTDOWN,
         WHO_ARE_YOU,
         HELP,
+        // ---- v3 additions ----
+        CALENDAR_QUERY,    // "что у меня завтра", "когда встреча"
+        CALENDAR_CREATE,   // "создай встречу на пятницу в 15:00"
+        EMAIL_SEND,        // "отправь письмо Олегу"
+        NOTES_ADD,         // "запиши заметку про отчёт"
+        NOTES_READ,        // "прочитай заметки"
+        NOTES_DELETE,      // "удали заметку про отчёт"
         UNKNOWN,
     }
 
     public static class Parsed {
         public Type type;
-        public String arg1;       // app name / song / text-to-translate
-        public String arg2;       // target language for translate
-        public String arg3;       // src language for translate
+        public String arg1;       // app name / song / text-to-translate / note text / event title / contact name
+        public String arg2;       // target language for translate / email subject
+        public String arg3;       // src language for translate / email body
         public int int1;          // minutes/seconds for timer
         public int int2;          // hours for alarm
         public int int3;          // minutes for alarm
+        public long longArg1;     // start ms (calendar)
+        public long longArg2;     // end ms (calendar)
         public String raw;
     }
 
@@ -202,6 +211,48 @@ public class Intents {
     private static final Pattern SHUTDOWN_RU = Pattern.compile(
             "(?iu)^(?:выключи себя|отключись|выключайся|спокойной ночи)\\b.*");
 
+    // ---------- v3 RU: calendar / mail / notes ----------
+
+    private static final Pattern NOTES_ADD_RU = Pattern.compile(
+            "(?iu)^(?:запиши|записать|добавь|добавить|сохрани|создай|сделай|новая|новую)\\s+"
+                    + "(?:заметку|заметка|заметок|заметки|ноту|запись|записи)\\s*"
+                    + "(?:(?:про|о|об|что|касательно|насчёт|насчет|:|—|-)\\s+)?"
+                    + "(.+)$");
+    private static final Pattern NOTES_READ_RU = Pattern.compile(
+            "(?iu)^(?:прочитай|прочти|покажи|показать|список|выведи|вывести|открой|открыть|озвучь|что\\s+в)\\s+"
+                    + "(?:мои\\s+|моей\\s+|все\\s+|последние\\s+)?"
+                    + "(?:заметки|заметках|заметки\\s+в|заметок|список\\s+заметок|списке\\s+заметок)\\b.*");
+    private static final Pattern NOTES_DELETE_RU = Pattern.compile(
+            "(?iu)^(?:удали|удалить|сотри|стереть|выкинь|убери|забудь)\\s+"
+                    + "(?:все\\s+)?"
+                    + "(?:заметку|заметки|заметок)\\s*"
+                    + "(?:(?:про|о|об|касательно|с|со)\\s+)?"
+                    + "(.*)$");
+
+    private static final Pattern EMAIL_SEND_RU = Pattern.compile(
+            "(?iu)^(?:отправь|отправить|напиши|создай|составь|составить)\\s+"
+                    + "(?:письмо|почту|электронное\\s+письмо|email|e-mail|сообщение)\\s+"
+                    + "(?:на\\s+адрес\\s+|на\\s+|на\\s+почту\\s+)?"
+                    + "([\\p{L}\\.\\-\\s@]+?)"
+                    + "(?:\\s+(?:про|о|об|касательно)\\s+(.+))?$");
+
+    /** Создать встречу/событие в календаре. */
+    private static final Pattern CAL_CREATE_RU = Pattern.compile(
+            "(?iu)^(?:создай|создать|добавь|добавить|запланируй|запланировать|поставь)\\s+"
+                    + "(?:в\\s+календарь\\s+|в\\s+календарю\\s+|календарь\\s+|календарю\\s+)?"
+                    + "(?:встречу|событие|мероприятие|напоминание\\s+в\\s+календарь)\\b\\s*(.*)$");
+    /** Запрос к календарю: «что у меня завтра», «какие встречи». */
+    private static final Pattern CAL_QUERY_RU = Pattern.compile(
+            "(?iu)^(?:"
+                    + "что\\s+(?:у\\s+меня|в\\s+календаре|по\\s+расписанию|в\\s+расписании)"
+                    + "|какие\\s+(?:у\\s+меня\\s+)?встречи"
+                    + "|каково\\s+моё\\s+расписание"
+                    + "|расписание\\s+(?:на\\s+)?"
+                    + "|покажи\\s+календарь"
+                    + "|встречи\\s+(?:на\\s+)?"
+                    + "|открой\\s+календарь"
+                    + ")\\b.*");
+
     // ---------- English patterns ----------
 
     private static final Pattern OPEN_EN = Pattern.compile(
@@ -240,6 +291,21 @@ public class Intents {
     private static final Pattern SHUTDOWN_EN = Pattern.compile(
             "(?i)^(?:shut down|turn off|good night|power off)\\b.*");
 
+    // ---------- v3 EN: calendar / mail / notes ----------
+
+    private static final Pattern NOTES_ADD_EN = Pattern.compile(
+            "(?i)^(?:add|create|save|write|make)\\s+(?:a\\s+)?(?:new\\s+)?(?:note|reminder)\\s*(?:about|on|that|saying|:|-)?\\s*(.+)$");
+    private static final Pattern NOTES_READ_EN = Pattern.compile(
+            "(?i)^(?:read|show|list|open|display|tell\\s+me)\\s+(?:my\\s+|the\\s+|all\\s+)?(?:notes|note\\s+list)\\b.*");
+    private static final Pattern NOTES_DELETE_EN = Pattern.compile(
+            "(?i)^(?:delete|remove|erase|forget|drop)\\s+(?:the\\s+|all\\s+|my\\s+)?(?:note|notes)\\s*(?:about|on|with)?\\s*(.*)$");
+    private static final Pattern EMAIL_SEND_EN = Pattern.compile(
+            "(?i)^(?:send|compose|write)\\s+(?:an?\\s+)?(?:email|mail|message)\\s+(?:to\\s+)?([\\p{L}\\.\\-\\s@]+?)(?:\\s+(?:about|regarding|on)\\s+(.+))?$");
+    private static final Pattern CAL_CREATE_EN = Pattern.compile(
+            "(?i)^(?:add|create|schedule|set up|book)\\s+(?:an?\\s+)?(?:meeting|event|appointment|reminder\\s+in\\s+calendar)\\b\\s*(.*)$");
+    private static final Pattern CAL_QUERY_EN = Pattern.compile(
+            "(?i)^(?:what(?:'s| is)?\\s+(?:on\\s+my\\s+calendar|my\\s+schedule)|show\\s+(?:my\\s+)?calendar|list\\s+(?:my\\s+)?(?:meetings|events)|when\\s+(?:is|are)\\s+my\\s+(?:next\\s+)?(?:meeting|event)s?)\\b.*");
+
     public static Parsed parse(String text, String lang) {
         Parsed p = new Parsed();
         p.raw = text;
@@ -252,6 +318,15 @@ public class Intents {
             // Replace word-numbers with digits ("семь тридцать" → "7 30") so
             // numeric command regexes can match speech-recognised input.
             text = RussianNumbers.normalize(text);
+            // Заметки и почта идут раньше OPEN_APP/CLOSE_APP, иначе
+            // "запиши заметку про Олега" разберётся как OPEN_APP с
+            // именем «заметку про Олега».
+            if (matchNotesAddRu(text, p)) { p.type = Type.NOTES_ADD; return p; }
+            if (NOTES_READ_RU.matcher(text).find()) { p.type = Type.NOTES_READ; return p; }
+            if (matchNotesDeleteRu(text, p)) { p.type = Type.NOTES_DELETE; return p; }
+            if (matchEmailSendRu(text, p)) { p.type = Type.EMAIL_SEND; return p; }
+            if (matchCalendarCreateRu(text, p)) { p.type = Type.CALENDAR_CREATE; return p; }
+            if (matchCalendarQueryRu(text, p)) { p.type = Type.CALENDAR_QUERY; return p; }
             // STOP_MUSIC must run before CLOSE_APP because "выключи музыку"
             // would otherwise be parsed as "close the app called музыку".
             if (STOP_MUSIC_RU.matcher(text).find()) { p.type = Type.STOP_MUSIC; return p; }
@@ -279,6 +354,12 @@ public class Intents {
             if (STOP_LISTEN_RU.matcher(text).find()) { p.type = Type.STOP_LISTENING; return p; }
             if (SHUTDOWN_RU.matcher(text).find()) { p.type = Type.SHUTDOWN; return p; }
         } else {
+            if (matchNotesAddEn(text, p)) { p.type = Type.NOTES_ADD; return p; }
+            if (NOTES_READ_EN.matcher(text).find()) { p.type = Type.NOTES_READ; return p; }
+            if (matchNotesDeleteEn(text, p)) { p.type = Type.NOTES_DELETE; return p; }
+            if (matchEmailSendEn(text, p)) { p.type = Type.EMAIL_SEND; return p; }
+            if (matchCalendarCreateEn(text, p)) { p.type = Type.CALENDAR_CREATE; return p; }
+            if (matchCalendarQueryEn(text, p)) { p.type = Type.CALENDAR_QUERY; return p; }
             if (STOP_MUSIC_EN.matcher(text).find()) { p.type = Type.STOP_MUSIC; return p; }
             if (com.devin.jarvis.commands.MusicService.isPlayingActive()
                     && STOP_MUSIC_EN_LOOSE.matcher(text).find()) {
@@ -416,6 +497,56 @@ public class Intents {
             p.int1 = 600;
         }
         p.arg1 = clean(m.group(3));
+        return true;
+    }
+
+    // ----- v3 match helpers -----
+    private static boolean matchNotesAddRu(String t, Parsed p) {
+        Matcher m = NOTES_ADD_RU.matcher(t); if (!m.find()) return false;
+        p.arg1 = clean(m.group(1)); return p.arg1 != null && !p.arg1.isEmpty();
+    }
+    private static boolean matchNotesDeleteRu(String t, Parsed p) {
+        Matcher m = NOTES_DELETE_RU.matcher(t); if (!m.find()) return false;
+        p.arg1 = clean(m.group(1)); return true;
+    }
+    private static boolean matchEmailSendRu(String t, Parsed p) {
+        Matcher m = EMAIL_SEND_RU.matcher(t); if (!m.find()) return false;
+        p.arg1 = clean(m.group(1));
+        p.arg2 = clean(m.group(2));
+        return p.arg1 != null && !p.arg1.isEmpty();
+    }
+    private static boolean matchCalendarCreateRu(String t, Parsed p) {
+        Matcher m = CAL_CREATE_RU.matcher(t); if (!m.find()) return false;
+        p.arg1 = clean(m.group(1));
+        return true;
+    }
+    private static boolean matchCalendarQueryRu(String t, Parsed p) {
+        Matcher m = CAL_QUERY_RU.matcher(t); if (!m.find()) return false;
+        p.arg1 = clean(t);
+        return true;
+    }
+    private static boolean matchNotesAddEn(String t, Parsed p) {
+        Matcher m = NOTES_ADD_EN.matcher(t); if (!m.find()) return false;
+        p.arg1 = clean(m.group(1)); return p.arg1 != null && !p.arg1.isEmpty();
+    }
+    private static boolean matchNotesDeleteEn(String t, Parsed p) {
+        Matcher m = NOTES_DELETE_EN.matcher(t); if (!m.find()) return false;
+        p.arg1 = clean(m.group(1)); return true;
+    }
+    private static boolean matchEmailSendEn(String t, Parsed p) {
+        Matcher m = EMAIL_SEND_EN.matcher(t); if (!m.find()) return false;
+        p.arg1 = clean(m.group(1));
+        p.arg2 = clean(m.group(2));
+        return p.arg1 != null && !p.arg1.isEmpty();
+    }
+    private static boolean matchCalendarCreateEn(String t, Parsed p) {
+        Matcher m = CAL_CREATE_EN.matcher(t); if (!m.find()) return false;
+        p.arg1 = clean(m.group(1));
+        return true;
+    }
+    private static boolean matchCalendarQueryEn(String t, Parsed p) {
+        Matcher m = CAL_QUERY_EN.matcher(t); if (!m.find()) return false;
+        p.arg1 = clean(t);
         return true;
     }
 

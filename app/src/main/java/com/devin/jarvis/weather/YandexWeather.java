@@ -2,6 +2,9 @@ package com.devin.jarvis.weather;
 
 import android.util.Log;
 
+import com.devin.jarvis.core.NetClient;
+import com.devin.jarvis.core.Settings;
+
 import java.io.IOException;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
@@ -36,6 +39,16 @@ public final class YandexWeather {
             .readTimeout(8, TimeUnit.SECONDS)
             .callTimeout(12, TimeUnit.SECONDS)
             .build();
+
+    /** Returns a per-call OkHttpClient with the user's configured proxy. */
+    private static OkHttpClient httpFor(Settings settings) {
+        if (settings == null || settings.proxyUrl().isEmpty()) return HTTP;
+        return NetClient.okhttpBuilder(settings)
+                .connectTimeout(5, TimeUnit.SECONDS)
+                .readTimeout(8, TimeUnit.SECONDS)
+                .callTimeout(12, TimeUnit.SECONDS)
+                .build();
+    }
 
     /** ~10 minute cache. Yandex updates page ~every hour anyway. */
     private static final long CACHE_TTL_MS = 10 * 60 * 1000L;
@@ -118,6 +131,10 @@ public final class YandexWeather {
      * if Yandex is unreachable.
      */
     public static Snapshot fetch(String city) {
+        return fetch(city, null);
+    }
+
+    public static Snapshot fetch(String city, Settings settings) {
         if (city == null || city.trim().isEmpty()) return null;
         String slug = toSlug(city);
         String key = slug;
@@ -135,7 +152,7 @@ public final class YandexWeather {
                     .header("Accept-Language", "ru,en;q=0.9")
                     .header("Accept", "text/html,application/xhtml+xml")
                     .build();
-            try (Response resp = HTTP.newCall(req).execute()) {
+            try (Response resp = httpFor(settings).newCall(req).execute()) {
                 if (!resp.isSuccessful() || resp.body() == null) {
                     Log.w(TAG, "Yandex Pogoda HTTP " + resp.code());
                     return null;

@@ -255,6 +255,154 @@
             android:textColorHint="?attr/jTextSecondary"
             android:layout_marginBottom="20dp" />
 
+        <!-- v3 advanced features -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="14dp"
+            android:layout_marginBottom="14dp"
+            android:background="?attr/jTextSecondary" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_v3_section"
+            android:textColor="?attr/jTextPrimary"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:paddingTop="6dp"
+            android:paddingBottom="2dp" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/longMemorySwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_long_memory"
+            android:textColor="?attr/jTextPrimary"
+            android:layout_marginTop="6dp" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_long_memory_desc"
+            android:textColor="?attr/jTextSecondary"
+            android:textSize="12sp"
+            android:paddingBottom="6dp" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/fastTtsSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_fast_tts"
+            android:textColor="?attr/jTextPrimary"
+            android:layout_marginTop="6dp" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_fast_tts_desc"
+            android:textColor="?attr/jTextSecondary"
+            android:textSize="12sp"
+            android:paddingBottom="6dp" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/internalAlarmSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_internal_alarm"
+            android:textColor="?attr/jTextPrimary"
+            android:layout_marginTop="6dp" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_internal_alarm_desc"
+            android:textColor="?attr/jTextSecondary"
+            android:textSize="12sp"
+            android:paddingBottom="14dp" />
+
+        <!-- Proxy / VPN section -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_proxy_section"
+            android:textColor="?attr/jTextPrimary"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:paddingTop="6dp"
+            android:paddingBottom="2dp" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_proxy_desc"
+            android:textColor="?attr/jTextSecondary"
+            android:textSize="12sp"
+            android:paddingBottom="6dp" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/useProxySwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_use_proxy"
+            android:textColor="?attr/jTextPrimary"
+            android:layout_marginTop="6dp" />
+
+        <EditText
+            android:id="@+id/proxyUrlEdit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/setting_proxy_url_hint"
+            android:inputType="textUri"
+            android:textColor="?attr/jTextPrimary"
+            android:textColorHint="?attr/jTextSecondary"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="6dp" />
+
+        <Spinner
+            android:id="@+id/proxyCandidateSpinner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="6dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="6dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/proxyTestBtn"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:text="@string/setting_proxy_test" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/proxyDiscoverBtn"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:text="@string/setting_proxy_discover" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/proxyStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="?attr/jTextSecondary"
+            android:textSize="12sp"
+            android:visibility="gone"
+            android:paddingBottom="4dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/setting_proxy_warning"
+            android:textColor="?attr/jTextSecondary"
+            android:textSize="11sp"
+            android:paddingBottom="14dp" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/clearMemoryBtn"
             style="@style/Widget.Material3.Button.OutlinedButton"

@@ -15,10 +15,12 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.devin.jarvis.R;
 import com.devin.jarvis.core.Memory;
+import com.devin.jarvis.core.ProxyManager;
 import com.devin.jarvis.core.Settings;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.materialswitch.MaterialSwitch;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -45,6 +47,19 @@ public class SettingsActivity extends AppCompatActivity {
     private EditText userCityEdit;
     private EditText userCountryEdit;
     private EditText userTimezoneEdit;
+
+    // ---- v3 fields ----
+    private MaterialSwitch longMemorySwitch;
+    private MaterialSwitch fastTtsSwitch;
+    private MaterialSwitch internalAlarmSwitch;
+    private MaterialSwitch useProxySwitch;
+    private EditText proxyUrlEdit;
+    private Spinner proxyCandidateSpinner;
+    private MaterialButton proxyTestBtn;
+    private MaterialButton proxyDiscoverBtn;
+    private TextView proxyStatus;
+    private List<ProxyManager.Candidate> proxyCandidates = new ArrayList<>();
+    private ProxyManager activeDiscovery;
 
     private static final List<String> LANG_VALUES = Arrays.asList("ru", "en");
     private static final List<String> LANG_LABELS = Arrays.asList("Русский", "English");
@@ -237,6 +252,118 @@ public class SettingsActivity extends AppCompatActivity {
             new Memory(this).clear();
             Toast.makeText(this, R.string.memory_cleared, Toast.LENGTH_SHORT).show();
         });
+
+        // ---- v3 wiring: long memory / fast TTS / internal alarm / proxy ----
+        longMemorySwitch = findViewById(R.id.longMemorySwitch);
+        fastTtsSwitch = findViewById(R.id.fastTtsSwitch);
+        internalAlarmSwitch = findViewById(R.id.internalAlarmSwitch);
+        useProxySwitch = findViewById(R.id.useProxySwitch);
+        proxyUrlEdit = findViewById(R.id.proxyUrlEdit);
+        proxyCandidateSpinner = findViewById(R.id.proxyCandidateSpinner);
+        proxyTestBtn = findViewById(R.id.proxyTestBtn);
+        proxyDiscoverBtn = findViewById(R.id.proxyDiscoverBtn);
+        proxyStatus = findViewById(R.id.proxyStatus);
+
+        longMemorySwitch.setChecked(settings.longMemory());
+        longMemorySwitch.setOnCheckedChangeListener((b, v) -> settings.setLongMemory(v));
+
+        fastTtsSwitch.setChecked(settings.fastTts());
+        fastTtsSwitch.setOnCheckedChangeListener((b, v) -> settings.setFastTts(v));
+
+        internalAlarmSwitch.setChecked(settings.internalAlarmFallback());
+        internalAlarmSwitch.setOnCheckedChangeListener((b, v) -> settings.setInternalAlarmFallback(v));
+
+        useProxySwitch.setChecked(settings.useProxy());
+        useProxySwitch.setOnCheckedChangeListener((b, v) -> settings.setUseProxy(v));
+
+        proxyUrlEdit.setText(settings.proxyUrlRaw());
+
+        loadProxyCandidatesFromSettings();
+        refreshProxySpinner();
+
+        proxyTestBtn.setOnClickListener(v -> testCurrentProxy());
+        proxyDiscoverBtn.setOnClickListener(v -> discoverProxies());
+    }
+
+    private void loadProxyCandidatesFromSettings() {
+        proxyCandidates = new ArrayList<>(ProxyManager.fromJson(settings.proxyCandidatesJson()));
+    }
+
+    private void refreshProxySpinner() {
+        List<String> labels = new ArrayList<>();
+        labels.add("— ручной ввод выше —");
+        for (ProxyManager.Candidate c : proxyCandidates) labels.add(c.toString());
+        ArrayAdapter<String> a = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, labels);
+        a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        proxyCandidateSpinner.setAdapter(a);
+        proxyCandidateSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (position == 0) return;
+                ProxyManager.Candidate picked = proxyCandidates.get(position - 1);
+                proxyUrlEdit.setText(picked.url());
+                settings.setProxyUrl(picked.url());
+                proxyStatus.setVisibility(View.VISIBLE);
+                proxyStatus.setText(getString(R.string.setting_proxy_picked,
+                        picked.url(), (int) picked.latencyMs));
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) {}
+        });
+    }
+
+    private void testCurrentProxy() {
+        final String url = proxyUrlEdit.getText() != null
+                ? proxyUrlEdit.getText().toString().trim() : "";
+        if (TextUtils.isEmpty(url)) {
+            proxyStatus.setVisibility(View.VISIBLE);
+            proxyStatus.setText(R.string.setting_proxy_url_hint);
+            return;
+        }
+        settings.setProxyUrl(url);
+        proxyStatus.setVisibility(View.VISIBLE);
+        proxyStatus.setText("…");
+        new Thread(() -> {
+            long ms = ProxyManager.testProxyUrl(url);
+            runOnUiThread(() -> {
+                if (ms < 0) {
+                    proxyStatus.setText(getString(R.string.setting_proxy_test_fail, "timeout"));
+                } else {
+                    proxyStatus.setText(getString(R.string.setting_proxy_test_ok, (int) ms));
+                }
+            });
+        }, "ProxyTest").start();
+    }
+
+    private void discoverProxies() {
+        if (activeDiscovery != null) activeDiscovery.cancel();
+        activeDiscovery = new ProxyManager();
+        proxyDiscoverBtn.setEnabled(false);
+        proxyStatus.setVisibility(View.VISIBLE);
+        proxyStatus.setText("…");
+        activeDiscovery.discoverAndRank(8, new ProxyManager.Listener() {
+            @Override public void onProgress(int tested, int total, int passed) {
+                proxyStatus.setText("Тестирую: " + tested + "/" + total
+                        + " (рабочих: " + passed + ")");
+            }
+            @Override public void onDone(List<ProxyManager.Candidate> ranked) {
+                proxyDiscoverBtn.setEnabled(true);
+                proxyCandidates = new ArrayList<>(ranked);
+                settings.setProxyCandidatesJson(ProxyManager.toJson(ranked));
+                refreshProxySpinner();
+                if (!ranked.isEmpty()) {
+                    ProxyManager.Candidate best = ranked.get(0);
+                    proxyUrlEdit.setText(best.url());
+                    settings.setProxyUrl(best.url());
+                    proxyStatus.setText(getString(R.string.setting_proxy_picked,
+                            best.url(), (int) best.latencyMs));
+                }
+            }
+            @Override public void onError(String message) {
+                proxyDiscoverBtn.setEnabled(true);
+                proxyStatus.setText(getString(R.string.setting_proxy_test_fail,
+                        message == null ? "?" : message));
+            }
+        });
     }
 
     @Override
@@ -244,6 +371,9 @@ public class SettingsActivity extends AppCompatActivity {
         // Save any pending unsaved key automatically when leaving the screen.
         saveKeyFromEdit(false);
         savePersonalisation();
+        if (proxyUrlEdit != null) {
+            settings.setProxyUrl(text(proxyUrlEdit));
+        }
         super.onPause();
     }
 

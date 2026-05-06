@@ -1,6 +1,8 @@
 package com.devin.jarvis.llm;
 
+import com.devin.jarvis.core.LongMemory;
 import com.devin.jarvis.core.Memory;
+import com.devin.jarvis.core.NetClient;
 import com.devin.jarvis.core.Persona;
 import com.devin.jarvis.core.Settings;
 
@@ -33,8 +35,18 @@ public class OpenAiClient {
     private final String model;
     private final boolean isOpenRouter;
     private final OkHttpClient http;
+    private final LongMemory longMemory;
 
     public OpenAiClient(String apiKey) {
+        this(apiKey, null, null);
+    }
+
+    public OpenAiClient(String apiKey, Settings settings) {
+        this(apiKey, settings, null);
+    }
+
+    public OpenAiClient(String apiKey, Settings settings, LongMemory longMemory) {
+        this.longMemory = longMemory;
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         // Auto-detect provider: OpenRouter keys start with "sk-or-".
         if (this.apiKey.startsWith("sk-or-")) {
@@ -46,7 +58,10 @@ public class OpenAiClient {
             this.model = "gpt-4o-mini";
             this.isOpenRouter = false;
         }
-        this.http = new OkHttpClient.Builder()
+        OkHttpClient.Builder b = settings != null
+                ? NetClient.okhttpBuilder(settings)
+                : new OkHttpClient.Builder();
+        this.http = b
                 .connectTimeout(6, TimeUnit.SECONDS)
                 .readTimeout(15, TimeUnit.SECONDS)
                 .writeTimeout(10, TimeUnit.SECONDS)
@@ -210,7 +225,7 @@ public class OpenAiClient {
         return 0;
     }
 
-    private JSONObject baseRequestBody(String userText, String lang, Memory memory, Settings settings)
+    private JSONObject baseRequestBody(final String userText, String lang, Memory memory, Settings settings)
             throws JSONException {
         JSONArray messages = new JSONArray();
         JSONObject sys = new JSONObject();
@@ -226,6 +241,29 @@ public class OpenAiClient {
                     ? "Краткая память о пользователе и предыдущих разговорах: "
                     : "Short memory about the user and prior conversations: ")
                     + summary;
+        }
+        // Long-term memory: facts and rolling session summaries are stored
+        // separately so they survive even when the in-memory transcript is
+        // cleared. We retrieve only the most relevant 6 facts plus the 3
+        // freshest session summaries to keep the system prompt compact.
+        if (settings != null && settings.longMemory() && longMemory != null) {
+            try {
+                String block = longMemory.renderForPrompt(userText, 6, lang);
+                if (!block.isEmpty()) prompt = prompt + "\n\n" + block;
+            } catch (Throwable ignored) {}
+            // Teach the model to flag durable user facts so we can persist
+            // them. The token "FACT:" is parsed by LongMemory.extractAndStoreFacts.
+            prompt = prompt + "\n\n" + ("ru".equalsIgnoreCase(lang)
+                    ? "Если в реплике пользователя есть постоянный факт о нём (имя, "
+                            + "город, профессия, день рождения, имена близких, "
+                            + "предпочтения), выведи его отдельной строкой в начале "
+                            + "ответа в формате `FACT: <короткое утверждение>`. Если "
+                            + "новых фактов нет — не пиши строку FACT."
+                    : "If the user's message contains a durable personal fact (name, "
+                            + "city, job, birthday, family names, preferences), emit "
+                            + "it as a separate first line in the form "
+                            + "`FACT: <short statement>`. Skip the FACT line if "
+                            + "there's nothing new worth remembering.");
         }
         sys.put("content", prompt);
         messages.put(sys);
@@ -401,7 +439,7 @@ public class OpenAiClient {
                 ? settings.userCity() : "Краснодар";
         com.devin.jarvis.weather.YandexWeather.Snapshot snap;
         try {
-            snap = com.devin.jarvis.weather.YandexWeather.fetch(city);
+            snap = com.devin.jarvis.weather.YandexWeather.fetch(city, settings);
         } catch (Throwable t) {
             return "";
         }

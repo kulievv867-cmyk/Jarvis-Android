@@ -6,6 +6,7 @@ import android.os.HandlerThread;
 import android.os.Looper;
 import android.util.Log;
 
+import com.devin.jarvis.core.NetClient;
 import com.devin.jarvis.core.Settings;
 
 import java.io.File;
@@ -152,13 +153,31 @@ public final class WhisperRecognizer {
 
     /** Free disk reclaim helper. Removes ALL cached model variants — the
      *  user explicitly asked to reclaim space, so we don't leave any
-     *  half-present model behind. */
-    public synchronized void deleteCachedModel() {
-        close();
+     *  half-present model behind. Runs on the worker thread so the main
+     *  thread isn't blocked by {@link WhisperJni#freeContext} for a 500 MB
+     *  large-turbo model — that block previously turned a "switch model"
+     *  click in Settings into a 1-second freeze and an ANR / SIGSEGV crash
+     *  if a transcription was running at the same moment. */
+    public void deleteCachedModel() {
+        handler.post(this::deleteCachedModelOnWorker);
+    }
+
+    private synchronized void deleteCachedModelOnWorker() {
+        long ptr = contextPtr.getAndSet(0L);
+        if (ptr != 0L) {
+            try { WhisperJni.freeContext(ptr); } catch (Throwable ignored) {}
+        }
+        ready = false;
+        loadedVariant = null;
         loadAttempted = false;
-        for (Variant v : Variant.values()) {
-            File f = modelFile(v);
-            try { if (f.exists()) f.delete(); } catch (Throwable ignored) {}
+        File outDir = new File(appCtx.getFilesDir(), "whisper");
+        if (outDir.exists()) {
+            File[] all = outDir.listFiles();
+            if (all != null) {
+                for (File f : all) {
+                    try { f.delete(); } catch (Throwable ignored) {}
+                }
+            }
         }
     }
 
@@ -213,23 +232,30 @@ public final class WhisperRecognizer {
         }
     }
 
-    /** Synchronously transcribe a mono 16 kHz PCM-16 buffer. Returns null on failure. */
+    /** Synchronously transcribe a mono 16 kHz PCM-16 buffer. Returns null on failure.
+     *  <p>Synchronized on this so the native context can't be freed mid-call
+     *  if the user switches the model from Settings while a recording is being
+     *  transcribed — that race used to crash the app with SIGSEGV when the
+     *  user toggled Whisper Base. */
     public String transcribePcm16Sync(short[] pcm16, String lang) {
         if (!ready) return null;
-        long ptr = contextPtr.get();
-        if (ptr == 0L) return null;
-
-        float[] pcmF = new float[pcm16.length];
-        for (int i = 0; i < pcm16.length; i++) {
-            pcmF[i] = pcm16[i] / 32768.0f;
-        }
-        try {
-            int threads = Math.max(2, Math.min(8, Runtime.getRuntime().availableProcessors()));
-            String text = WhisperJni.transcribe(ptr, pcmF, lang == null ? "ru" : lang, threads);
-            return text == null ? "" : text.trim();
-        } catch (Throwable t) {
-            Log.e(TAG, "transcribe threw", t);
-            return null;
+        long ptr;
+        synchronized (this) {
+            if (!ready) return null;
+            ptr = contextPtr.get();
+            if (ptr == 0L) return null;
+            float[] pcmF = new float[pcm16.length];
+            for (int i = 0; i < pcm16.length; i++) {
+                pcmF[i] = pcm16[i] / 32768.0f;
+            }
+            try {
+                int threads = Math.max(2, Math.min(8, Runtime.getRuntime().availableProcessors()));
+                String text = WhisperJni.transcribe(ptr, pcmF, lang == null ? "ru" : lang, threads);
+                return text == null ? "" : text.trim();
+            } catch (Throwable t) {
+                Log.e(TAG, "transcribe threw", t);
+                return null;
+            }
         }
     }
 
@@ -260,7 +286,11 @@ public final class WhisperRecognizer {
         try {
             File tmp = new File(outDir, v.fileName + ".part");
             URL url = new URL(v.url());
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            // Honour the user's configured proxy (if any) so the multi-MB
+            // model download still works in countries where huggingface.co
+            // is blocked or throttled.
+            java.net.Proxy proxy = NetClient.javaNetProxy(new Settings(appCtx));
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection(proxy);
             conn.setConnectTimeout(15_000);
             conn.setReadTimeout(60_000);
             conn.setInstanceFollowRedirects(true);
