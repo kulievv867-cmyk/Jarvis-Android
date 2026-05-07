@@ -22,7 +22,13 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -59,14 +65,45 @@ public class JarvisVoice {
     private final AtomicLong utterIdGen = new AtomicLong(1);
     private final Map<String, String> pendingWavs = new HashMap<>();
     private Thread workerThread;
-    private final LinkedBlockingQueue<String> requests = new LinkedBlockingQueue<>();
+    /**
+     * Each item carries a sentence chunk + a Future that resolves to that
+     * chunk's MP3 bytes. Synthesis is started in parallel for ALL queued
+     * chunks the moment {@link #speak} is called. The worker thread plays
+     * them in order, awaiting each Future. By the time chunk 1 finishes
+     * playing, chunks 2..N are usually already synthesised — eliminating the
+     * Edge-TTS round-trip pause that used to sit between sentences.
+     */
+    private final LinkedBlockingQueue<SpeechItem> requests = new LinkedBlockingQueue<>();
     private final AtomicBoolean alive = new AtomicBoolean(true);
     private volatile AudioTrack currentTrack;
     private volatile Settings settings;
+    /**
+     * Pool that synthesises sentence chunks in parallel. 4 threads is enough
+     * to keep up with any reasonable LLM reply (≤4 sentences ≈ 1 round-trip
+     * end-to-end), and Edge TTS happily handles concurrent connections.
+     */
+    private final ExecutorService synthExec = Executors.newFixedThreadPool(4, new ThreadFactory() {
+        private final AtomicLong i = new AtomicLong(0);
+        @Override public Thread newThread(Runnable r) {
+            Thread t = new Thread(r, "Jarvis-TTS-Synth-" + i.incrementAndGet());
+            t.setDaemon(true);
+            return t;
+        }
+    });
 
     private final EdgeTts edge;
     private final Mp3Decoder mp3 = new Mp3Decoder();
     private final TtsCache cache;
+
+    /** Wraps a chunk of text with the in-flight Future of its MP3 bytes. */
+    private static final class SpeechItem {
+        final String text;
+        final Future<byte[]> mp3Future;
+        SpeechItem(String text, Future<byte[]> mp3Future) {
+            this.text = text;
+            this.mp3Future = mp3Future;
+        }
+    }
 
     public JarvisVoice(Context ctx, boolean modulation, Runnable onReady) {
         this.ctx = ctx.getApplicationContext();
@@ -114,30 +151,42 @@ public class JarvisVoice {
         workerThread = new Thread(() -> {
             Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO);
             while (alive.get()) {
-                String text;
+                SpeechItem item;
                 try {
-                    text = requests.take();
+                    item = requests.take();
                 } catch (InterruptedException e) {
                     if (!alive.get()) return;
                     Thread.currentThread().interrupt();
                     continue;
                 }
-                if (text == null || text.isEmpty()) continue;
+                if (item == null || item.text == null || item.text.isEmpty()) continue;
                 Listener l = listener;
                 if (l != null) l.onSpeechStart();
                 try {
-                    // "Fast TTS" mode: use Android's on-device TTS engine
-                    // directly. Synthesis is ~100 ms vs Edge's ~500–1500 ms
-                    // network round-trip. Sacrifices the cinematic British
-                    // butler character for snappy responsiveness.
-                    boolean played = false;
+                    // "Fast TTS" mode: bypass Edge entirely and use Android's
+                    // on-device TTS engine. ~100 ms synth, ugly voice. We
+                    // ignore the precomputed Edge Future because the user
+                    // explicitly asked for the snappy path.
                     if (settings != null && settings.fastTts()) {
-                        synthesizeAndPlayViaSystem(text);
-                        played = true;
+                        synthesizeAndPlayViaSystem(item.text);
+                        continue;
                     }
-                    if (!played) played = synthesizeAndPlayViaEdge(text);
+                    boolean played = false;
+                    try {
+                        byte[] mp3Bytes = item.mp3Future != null
+                                ? item.mp3Future.get(20, TimeUnit.SECONDS)
+                                : null;
+                        if (mp3Bytes != null && mp3Bytes.length >= 64) {
+                            played = decodeAndPlayMp3(mp3Bytes);
+                        }
+                    } catch (Throwable t) {
+                        Log.w(TAG, "Edge TTS chunk failed: " + t.getMessage());
+                    }
                     if (!played) {
-                        synthesizeAndPlayViaSystem(text);
+                        // Edge unreachable / decode failed — fall back to
+                        // the on-device TTS engine for this chunk only so
+                        // the user still hears a reply.
+                        synthesizeAndPlayViaSystem(item.text);
                     }
                 } catch (Throwable t) {
                     Log.w(TAG, "speak failed", t);
@@ -150,7 +199,12 @@ public class JarvisVoice {
         workerThread.start();
     }
 
-    private boolean synthesizeAndPlayViaEdge(String text) {
+    /**
+     * Synthesise just the MP3 bytes for one chunk via Edge TTS, hitting the
+     * disk cache first. Pure compute / network — no audio output. Safe to
+     * call from the parallel synth executor.
+     */
+    private byte[] synthesizeMp3ViaEdge(String text) {
         try {
             String voice = "ru".equalsIgnoreCase(settings.language())
                     ? EdgeTts.VOICE_RUSSIAN_MALE
@@ -158,40 +212,36 @@ public class JarvisVoice {
             String rate = "-8%";
             String pitch = "-2Hz";
             byte[] mp3Bytes = null;
-            // Disk cache: short, frequently-spoken phrases («Слушаю.»,
-            // «Готово.», «Открываю Telegram.») get re-rendered the
-            // same way every time. Caching the MP3 by content+voice cuts
-            // perceived latency for these acks from ~700 ms to <50 ms.
             if (cache != null && cache.isCacheable(text)) {
                 mp3Bytes = cache.get(text, voice, rate, pitch);
             }
             if (mp3Bytes == null) {
-                // Slow + slightly lower pitch puts Edge TTS into "calm British
-                // butler" territory — closer to film-Jarvis than the default
-                // perky news-reader cadence.
                 mp3Bytes = edge.synthesize(text, voice, rate, pitch);
                 if (cache != null && mp3Bytes != null && cache.isCacheable(text)) {
                     cache.put(text, voice, rate, pitch, mp3Bytes);
                 }
             }
-            if (mp3Bytes == null || mp3Bytes.length < 64) {
-                Log.w(TAG, "Edge TTS returned no audio");
-                return false;
-            }
+            return mp3Bytes;
+        } catch (Throwable t) {
+            Log.w(TAG, "synthesizeMp3ViaEdge failed: " + t.getMessage());
+            return null;
+        }
+    }
+
+    /** Decode pre-fetched MP3 bytes, run DSP and play. Returns true on success. */
+    private boolean decodeAndPlayMp3(byte[] mp3Bytes) {
+        try {
             File scratch = new File(ctx.getCacheDir(), "tts");
             if (!scratch.exists()) //noinspection ResultOfMethodCallIgnored
                 scratch.mkdirs();
             Mp3Decoder.Result decoded = mp3.decode(mp3Bytes, scratch);
-            if (decoded.samples == null || decoded.samples.length == 0) {
-                Log.w(TAG, "Edge TTS decoded to 0 samples");
-                return false;
-            }
+            if (decoded.samples == null || decoded.samples.length == 0) return false;
             float[] samples = decoded.samples;
             if (modulationEnabled) applyDsp(samples, decoded.sampleRate);
             playFloats(samples, decoded.sampleRate);
             return true;
         } catch (Throwable t) {
-            Log.w(TAG, "Edge TTS path failed: " + t.getMessage());
+            Log.w(TAG, "decodeAndPlayMp3 failed: " + t.getMessage());
             return false;
         }
     }
@@ -343,15 +393,14 @@ public class JarvisVoice {
             try { at.pause(); at.flush(); at.stop(); } catch (Exception ignored) {}
         }
         // Drop any queued text to avoid backing up an angry queue if the user
-        // talks fast.
-        requests.clear();
-        // Split the reply into sentences and queue each one separately. The
-        // worker synthesises sentence N+1 while the user is still hearing
-        // sentence N, so perceived latency is dominated by the *first*
-        // sentence — which is typically very short ("Готово.", "Слушаю.")
-        // and therefore comes out of Edge TTS in well under a second.
+        // talks fast. Cancel still-pending synth tasks too.
+        cancelPending();
+        // Split the reply into sentences and kick off synthesis for ALL
+        // chunks IN PARALLEL right now. The worker plays them in order, so
+        // the moment chunk 1 finishes playing, chunks 2..N are usually
+        // already on disk — eliminating the inter-sentence pause.
         for (String chunk : splitForStreaming(text)) {
-            requests.offer(chunk);
+            requests.offer(submitSynth(chunk));
         }
     }
 
@@ -364,7 +413,35 @@ public class JarvisVoice {
         if (text == null || text.isEmpty()) return;
         if (!alive.get()) return;
         for (String chunk : splitForStreaming(text)) {
-            requests.offer(chunk);
+            requests.offer(submitSynth(chunk));
+        }
+    }
+
+    /**
+     * Submit a single chunk to the parallel synth executor and wrap it as a
+     * SpeechItem. The Future is hot — synthesis starts immediately.
+     */
+    private SpeechItem submitSynth(final String chunk) {
+        Future<byte[]> f;
+        try {
+            f = synthExec.submit(new Callable<byte[]>() {
+                @Override public byte[] call() {
+                    return synthesizeMp3ViaEdge(chunk);
+                }
+            });
+        } catch (Throwable t) {
+            // Pool may be shutting down — let the worker fall back to system TTS.
+            f = null;
+        }
+        return new SpeechItem(chunk, f);
+    }
+
+    private void cancelPending() {
+        SpeechItem it;
+        while ((it = requests.poll()) != null) {
+            if (it.mp3Future != null) {
+                try { it.mp3Future.cancel(true); } catch (Throwable ignored) {}
+            }
         }
     }
 
@@ -423,7 +500,7 @@ public class JarvisVoice {
         if (at != null) {
             try { at.pause(); at.flush(); at.stop(); } catch (Exception ignored) {}
         }
-        requests.clear();
+        cancelPending();
         try { if (tts != null) tts.stop(); } catch (Exception ignored) {}
     }
 
@@ -433,7 +510,8 @@ public class JarvisVoice {
         if (at != null) {
             try { at.pause(); at.flush(); at.stop(); at.release(); } catch (Exception ignored) {}
         }
-        requests.clear();
+        cancelPending();
+        try { synthExec.shutdownNow(); } catch (Exception ignored) {}
         if (workerThread != null) workerThread.interrupt();
         try { if (tts != null) { tts.stop(); tts.shutdown(); } } catch (Exception ignored) {}
         tts = null;

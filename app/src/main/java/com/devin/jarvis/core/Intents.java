@@ -1,5 +1,6 @@
 package com.devin.jarvis.core;
 
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -260,9 +261,9 @@ public class Intents {
      * {@link Settings#userCity()} (по умолчанию Краснодар).
      */
     private static final Pattern WEATHER_RU = Pattern.compile(
-            "(?iu)^(?:какая\\s+(?:сейчас\\s+)?)?"
+            "(?iu)^(?:какая\\s+(?:будет\\s+|сейчас\\s+)?)?"
                     + "(?:погода|прогноз(?:\\s+погоды)?|на\\s+улице|за\\s+окном|тепло\\s+ли|холодно\\s+ли)"
-                    + "(?:\\s+(?:сейчас|сегодня|на\\s+сегодня|на\\s+завтра|в\\s+краснодаре|в\\s+москве))?"
+                    + "(?:\\s+(?:сейчас|сегодня|на\\s+сегодня|завтра|на\\s+завтра|послезавтра|на\\s+послезавтра|на\\s+\\d+\\s+дн[еяй]+))?"
                     + "(?:\\s+в\\s+([\\p{L}\\-\\s]+?))?\\s*[?.!]*$");
 
     // ---------- English patterns ----------
@@ -553,6 +554,11 @@ public class Intents {
         // settings.userCity()», по умолчанию Краснодар.
         String city = m.groupCount() >= 1 ? m.group(1) : null;
         p.arg1 = city == null ? "" : clean(city);
+        // arg2 = day offset: "1" = завтра, "2" = послезавтра, "" = сегодня.
+        String low = t.toLowerCase(Locale.ROOT);
+        if (low.contains("послезавтра") || low.contains("через два дня") || low.contains("через 2 дня")) p.arg2 = "2";
+        else if (low.contains("завтра")) p.arg2 = "1";
+        else p.arg2 = "";
         return true;
     }
     private static boolean matchNotesAddEn(String t, Parsed p) {
@@ -583,6 +589,10 @@ public class Intents {
         Matcher m = WEATHER_EN.matcher(t); if (!m.find()) return false;
         String city = m.groupCount() >= 1 ? m.group(1) : null;
         p.arg1 = city == null ? "" : clean(city);
+        String low = t.toLowerCase(Locale.ROOT);
+        if (low.contains("day after tomorrow") || low.contains("the day after")) p.arg2 = "2";
+        else if (low.contains("tomorrow")) p.arg2 = "1";
+        else p.arg2 = "";
         return true;
     }
 

@@ -123,7 +123,7 @@ public class Brain {
             case EMAIL_SEND: doEmailSend(p.arg1, p.arg2); break;
             case CALENDAR_QUERY: doCalendarQuery(p.arg1); break;
             case CALENDAR_CREATE: doCalendarCreate(p.arg1); break;
-            case WEATHER: doWeather(p.arg1); break;
+            case WEATHER: doWeather(p.arg1, p.arg2); break;
             case UNKNOWN:
             default:
                 doFallback(stripped);
@@ -154,13 +154,24 @@ public class Brain {
             say(ru() ? Persona.unknownAppRu(name) : Persona.unknownAppEn(name));
             return;
         }
-        // Best-effort kill of background processes.
+        // Бесшумно прибиваем фоновые процессы — Android позволяет это без
+        // root, если приложение не на переднем плане. Если оно сейчас
+        // активно/foreground — этот вызов тихо ничего не сделает, и нужно
+        // открывать страницу «О приложении» для ручного «Остановить».
+        boolean foreground = launcher.isAppForeground(m);
         launcher.killBackground(m);
-        // Then open App Info so user can press Force Stop if app is still in foreground.
-        launcher.openAppInfo(m);
-        say(ru()
-                ? "Без root напрямую закрыть нельзя. Фоновые процессы " + m.label + " остановил, страницу настроек открыл — нажмите «Остановить» там."
-                : "Can't close foregrounded apps without root. I've killed " + m.label + "'s background processes and opened its info page — tap Force Stop there.");
+        if (foreground) {
+            // Включаем эскалацию: открываем страницу настроек, где у
+            // пользователя есть кнопка «Остановить».
+            launcher.openAppInfo(m);
+            say(ru()
+                    ? Persona.closeForcedRu(m.label)
+                    : Persona.closeForcedEn(m.label));
+        } else {
+            say(ru()
+                    ? Persona.closeOkRu(m.label)
+                    : Persona.closeOkEn(m.label));
+        }
     }
 
     private void doTranslate(String text, String src, String dst) {
@@ -433,7 +444,7 @@ public class Brain {
      * через прокси, если настроен. Это позволяет получать погоду даже
      * когда OpenAI/Cloudflare недоступны или ключ не введён.
      */
-    private void doWeather(String cityFromVoice) {
+    private void doWeather(String cityFromVoice, String dayOffsetArg) {
         String city = cityFromVoice;
         if (city == null || city.isEmpty() || city.equalsIgnoreCase("краснодаре")) {
             city = (settings.userCity() != null && !settings.userCity().isEmpty())
@@ -446,10 +457,34 @@ public class Brain {
         if (city.endsWith("е") || city.endsWith("ё")) {
             city = city.substring(0, city.length() - 1);
         }
+        int dayOffset = 0;
+        try { if (dayOffsetArg != null && !dayOffsetArg.isEmpty()) dayOffset = Integer.parseInt(dayOffsetArg); }
+        catch (NumberFormatException ignored) {}
+
         reply.status(ru() ? "Смотрю прогноз…" : "Checking the forecast...");
         final String cityFinal = city;
+        final int dayFinal = dayOffset;
         new Thread(() -> {
             try {
+                if (dayFinal >= 1) {
+                    com.devin.jarvis.weather.YandexWeather.Forecast f =
+                            com.devin.jarvis.weather.YandexWeather.fetchForecast(cityFinal, dayFinal, settings);
+                    if (f != null) { say(ru() ? f.renderRu() : f.renderEn()); return; }
+                    // Прогноз не нашли — отдадим хотя бы текущую погоду с
+                    // оговоркой, чтобы пользователь не остался ни с чем.
+                    com.devin.jarvis.weather.YandexWeather.Snapshot snap =
+                            com.devin.jarvis.weather.YandexWeather.fetch(cityFinal, settings);
+                    if (snap != null) {
+                        String when = dayFinal == 1 ? "на завтра" : (dayFinal == 2 ? "на послезавтра" : "на этот день");
+                        say(ru()
+                                ? ("Прогноз " + when + " не пробился через Яндекс. Сейчас: " + snap.renderRu())
+                                : ("Couldn't reach the multi-day forecast. Current: " + snap.renderEn()));
+                        return;
+                    }
+                    say(ru() ? "Не получилось дотянуться до Яндекс Погоды. Если в вашем регионе блокировки — включите прокси в настройках."
+                            : "Couldn't reach Yandex Weather. If your region has blocks, enable a proxy in Settings.");
+                    return;
+                }
                 com.devin.jarvis.weather.YandexWeather.Snapshot snap =
                         com.devin.jarvis.weather.YandexWeather.fetch(cityFinal, settings);
                 if (snap == null) {

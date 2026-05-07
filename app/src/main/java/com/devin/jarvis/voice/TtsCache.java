@@ -25,8 +25,8 @@ import java.security.NoSuchAlgorithmException;
 public final class TtsCache {
 
     private static final String TAG = "Jarvis.TtsCache";
-    private static final long MAX_BYTES = 25L * 1024 * 1024; // ≤ 25 MB total
-    private static final int MAX_TEXT_LEN_TO_CACHE = 80;     // longer chunks are session-unique
+    private static final long MAX_BYTES = 100L * 1024 * 1024; // ≤ 100 MB total
+    private static final int MAX_TEXT_LEN_TO_CACHE = 220;     // sentences too — typical chunk after splitForStreaming
 
     private final File dir;
 

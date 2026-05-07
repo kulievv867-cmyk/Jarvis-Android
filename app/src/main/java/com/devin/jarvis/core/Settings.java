@@ -186,6 +186,21 @@ public class Settings {
         sp.edit().putBoolean(KEY_INTERNAL_ALARM_FALLBACK, v).apply();
     }
 
+    /**
+     * If true, Jarvis schedules alarms ONLY through its own internal
+     * AlarmManager and skips the system Clock app entirely. Solves the
+     * "alarm set" → "no alarm rings" loop on devices where the OEM Clock
+     * silently swallows {@code AlarmClock.ACTION_SET_ALARM}. Default true
+     * because user reported the system path doesn't work for them.
+     */
+    public static final String KEY_DIRECT_ALARM = "direct_alarm";
+    public boolean directAlarm() {
+        return sp.getBoolean(KEY_DIRECT_ALARM, true);
+    }
+    public void setDirectAlarm(boolean v) {
+        sp.edit().putBoolean(KEY_DIRECT_ALARM, v).apply();
+    }
+
     // ---- Long-term memory ----
 
     public static final String KEY_LONG_MEMORY = "long_memory";

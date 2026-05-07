@@ -17,7 +17,8 @@ public class AlertReceiver extends BroadcastReceiver {
         Intent svc = new Intent(context, AlertService.class)
                 .setAction(AlertService.ACTION_FIRE)
                 .putExtra(AlertService.EXTRA_TITLE, intent.getStringExtra("title"))
-                .putExtra(AlertService.EXTRA_TEXT, intent.getStringExtra("text"));
+                .putExtra(AlertService.EXTRA_TEXT, intent.getStringExtra("text"))
+                .putExtra(AlertService.EXTRA_KIND, intent.getStringExtra(AlertService.EXTRA_KIND));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(svc);
         } else {

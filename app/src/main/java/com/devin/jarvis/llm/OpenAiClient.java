@@ -303,8 +303,13 @@ public class OpenAiClient {
         JSONObject body = new JSONObject();
         body.put("model", modelFor(currentKey()));
         body.put("messages", messages);
-        body.put("temperature", 0.6);
-        body.put("max_tokens", 250);
+        // 0.85 + presence_penalty 0.4 — пусть Джарвис не повторяет
+        // одни и те же зачины («Конечно», «Разумеется») и звучит чуть
+        // живее. Ниже 0.7 ответы скучные, выше 1.0 — теряет деталь.
+        body.put("temperature", 0.85);
+        body.put("presence_penalty", 0.4);
+        body.put("frequency_penalty", 0.3);
+        body.put("max_tokens", 280);
         return body;
     }
 
