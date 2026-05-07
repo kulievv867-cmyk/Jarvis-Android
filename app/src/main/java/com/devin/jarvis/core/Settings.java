@@ -96,4 +96,114 @@ public class Settings {
     public void setTheme(String t) {
         sp.edit().putString(KEY_THEME, t == null ? THEME_BLUE : t).apply();
     }
+
+    // ---- Whisper re-recognition (off by default; trades latency for accuracy) ----
+
+    public static final String KEY_USE_WHISPER = "use_whisper";
+
+    public boolean useWhisper() { return sp.getBoolean(KEY_USE_WHISPER, false); }
+    public void setUseWhisper(boolean v) { sp.edit().putBoolean(KEY_USE_WHISPER, v).apply(); }
+
+    // ---- Whisper model variant ----
+    // "base" — fastest, sub-second on flagships, weak Russian accuracy.
+    // "small" — balanced (~1–2 sec, decent Russian).
+    // "large-turbo" — top accuracy, ~3–5 sec on flagships.
+    // Default is "base" so the user gets the speed they asked for.
+
+    public static final String KEY_WHISPER_MODEL = "whisper_model";
+
+    public String whisperModel() {
+        String v = sp.getString(KEY_WHISPER_MODEL, "base");
+        if (v == null) return "base";
+        switch (v) {
+            case "base":
+            case "small":
+            case "large-turbo":
+                return v;
+            default:
+                return "base";
+        }
+    }
+    public void setWhisperModel(String v) {
+        sp.edit().putString(KEY_WHISPER_MODEL, v == null ? "base" : v).apply();
+    }
+
+    // ---- Proxy / built-in "VPN" ----
+    // proxyUrl: empty = direct connection. Otherwise a URL like
+    // socks5://1.2.3.4:1080 or http://user:pass@host:8080. Honoured by
+    // OkHttp clients and HttpURLConnection through NetClient.
+
+    public static final String KEY_PROXY_URL = "proxy_url";
+    public static final String KEY_USE_PROXY = "use_proxy";
+    /** JSON list of recently auto-discovered free proxies. */
+    public static final String KEY_PROXY_CANDIDATES = "proxy_candidates_json";
+
+    public boolean useProxy() { return sp.getBoolean(KEY_USE_PROXY, false); }
+    public void setUseProxy(boolean v) { sp.edit().putBoolean(KEY_USE_PROXY, v).apply(); }
+
+    /** Returns the configured proxy URL ONLY if useProxy() is true. */
+    public String proxyUrl() {
+        if (!useProxy()) return "";
+        String s = sp.getString(KEY_PROXY_URL, "");
+        return s == null ? "" : s.trim();
+    }
+    public String proxyUrlRaw() {
+        String s = sp.getString(KEY_PROXY_URL, "");
+        return s == null ? "" : s.trim();
+    }
+    public void setProxyUrl(String s) {
+        sp.edit().putString(KEY_PROXY_URL, s == null ? "" : s.trim()).apply();
+    }
+
+    public String proxyCandidatesJson() { return sp.getString(KEY_PROXY_CANDIDATES, "[]"); }
+    public void setProxyCandidatesJson(String json) {
+        sp.edit().putString(KEY_PROXY_CANDIDATES, json == null ? "[]" : json).apply();
+    }
+
+    // ---- Fast TTS mode (system TTS instead of Edge TTS) ----
+    // The Jarvis-flavoured Edge TTS pipeline is gorgeous but spends
+    // ~500–1500 ms per sentence on the WebSocket round-trip. Power users
+    // who care more about responsiveness can flip this to use Android's
+    // built-in Google TTS, which produces audio in ~100 ms but loses the
+    // cinematic Bettany-butler character.
+
+    public static final String KEY_FAST_TTS = "fast_tts";
+    public boolean fastTts() { return sp.getBoolean(KEY_FAST_TTS, false); }
+    public void setFastTts(boolean v) { sp.edit().putBoolean(KEY_FAST_TTS, v).apply(); }
+
+    // ---- Internal alarm fallback ----
+    // If true, Jarvis schedules its own AlarmManager-backed alert in
+    // addition to handing the alarm off to the system Clock app, so the
+    // alarm still fires even when the OEM Clock silently rejects
+    // ACTION_SET_ALARM (Xiaomi/MIUI is the worst offender — it accepts
+    // the intent but never creates the alarm).
+
+    public static final String KEY_INTERNAL_ALARM_FALLBACK = "internal_alarm_fallback";
+    public boolean internalAlarmFallback() {
+        return sp.getBoolean(KEY_INTERNAL_ALARM_FALLBACK, true);
+    }
+    public void setInternalAlarmFallback(boolean v) {
+        sp.edit().putBoolean(KEY_INTERNAL_ALARM_FALLBACK, v).apply();
+    }
+
+    /**
+     * If true, Jarvis schedules alarms ONLY through its own internal
+     * AlarmManager and skips the system Clock app entirely. Solves the
+     * "alarm set" → "no alarm rings" loop on devices where the OEM Clock
+     * silently swallows {@code AlarmClock.ACTION_SET_ALARM}. Default true
+     * because user reported the system path doesn't work for them.
+     */
+    public static final String KEY_DIRECT_ALARM = "direct_alarm";
+    public boolean directAlarm() {
+        return sp.getBoolean(KEY_DIRECT_ALARM, true);
+    }
+    public void setDirectAlarm(boolean v) {
+        sp.edit().putBoolean(KEY_DIRECT_ALARM, v).apply();
+    }
+
+    // ---- Long-term memory ----
+
+    public static final String KEY_LONG_MEMORY = "long_memory";
+    public boolean longMemory() { return sp.getBoolean(KEY_LONG_MEMORY, true); }
+    public void setLongMemory(boolean v) { sp.edit().putBoolean(KEY_LONG_MEMORY, v).apply(); }
 }

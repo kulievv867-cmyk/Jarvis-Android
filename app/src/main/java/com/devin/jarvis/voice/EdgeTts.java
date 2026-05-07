@@ -2,6 +2,9 @@ package com.devin.jarvis.voice;
 
 import android.util.Log;
 
+import com.devin.jarvis.core.NetClient;
+import com.devin.jarvis.core.Settings;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -43,22 +46,50 @@ public class EdgeTts {
             + "(KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0";
     private static final String ORIGIN = "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold";
 
-    /** Voice short-names from Microsoft's catalog (free). */
-    public static final String VOICE_BRITISH_MALE = "en-GB-RyanNeural";
+    /** Voice short-names from Microsoft's catalog (free).
+     *
+     *  Thomas is an older, mid-baritone British voice — closer to the
+     *  Paul-Bettany "calm butler" register than Ryan's lighter delivery,
+     *  which the user described as "не похоже на Джарвиса". */
+    public static final String VOICE_BRITISH_MALE = "en-GB-ThomasNeural";
     public static final String VOICE_RUSSIAN_MALE = "ru-RU-DmitryNeural";
 
     /** Output format negotiated with the server; only MP3 is supported. */
     private static final String OUTPUT_FORMAT = "audio-24khz-48kbitrate-mono-mp3";
 
-    private final OkHttpClient client;
+    private volatile OkHttpClient client;
+    private volatile String lastProxyUrl = null;
+    private final Settings settings;
 
     public EdgeTts() {
-        this.client = new OkHttpClient.Builder()
+        this(null);
+    }
+
+    public EdgeTts(Settings settings) {
+        this.settings = settings;
+        rebuildClient();
+    }
+
+    /** Rebuilds the OkHttp client whenever the proxy URL changes. */
+    private synchronized void rebuildClient() {
+        OkHttpClient.Builder b = settings != null
+                ? NetClient.okhttpBuilder(settings)
+                : new OkHttpClient.Builder();
+        this.client = b
                 .connectTimeout(8, TimeUnit.SECONDS)
                 .readTimeout(20, TimeUnit.SECONDS)
                 .writeTimeout(10, TimeUnit.SECONDS)
                 .pingInterval(15, TimeUnit.SECONDS)
                 .build();
+        this.lastProxyUrl = settings == null ? null : settings.proxyUrl();
+    }
+
+    private void refreshClientIfProxyChanged() {
+        if (settings == null) return;
+        String now = settings.proxyUrl();
+        if (now == null) now = "";
+        String prev = lastProxyUrl == null ? "" : lastProxyUrl;
+        if (!now.equals(prev)) rebuildClient();
     }
 
     public byte[] synthesize(String text, String voice) throws IOException {
@@ -66,6 +97,7 @@ public class EdgeTts {
     }
 
     public byte[] synthesize(String text, String voice, String rate, String pitch) throws IOException {
+        refreshClientIfProxyChanged();
         if (text == null) text = "";
         // Microsoft caps a single SSML at ~1500 chars; trim defensively.
         if (text.length() > 1400) text = text.substring(0, 1400);

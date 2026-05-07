@@ -135,6 +135,9 @@ public class JarvisService extends Service implements Brain.ReplyHandler {
         started = true;
 
         speaker = new Speaker(this, settings.modulation(), settings.ttsReverb(), null);
+        // Pre-render the very common ack phrases so the first reply after a
+        // wake-word doesn't pay the Edge TTS network round-trip.
+        try { speaker.prewarmCommonPhrases(); } catch (Throwable ignored) {}
 
         listener = new MicListener(this, settings);
         listener.setCallback(new MicListener.Callback() {
@@ -146,20 +149,18 @@ public class JarvisService extends Service implements Brain.ReplyHandler {
                     // Cut speech as soon as we hear "Jarvis" so the user can
                     // barge in without waiting for him to finish.
                     if (speaking.get()) interruptSpeech();
-                    // Duck any music currently playing so the recognizer can
-                    // hear the rest of the command over the song.
-                    com.devin.jarvis.commands.MusicService.duckIfPlaying(4500);
-                    broadcastTranscript(text, true);
-                }
-                // Aggressive early stop: if music is playing AND the partial
-                // already contains a stop keyword, kill the player NOW
-                // rather than wait for Vosk to finalise. Otherwise the song
-                // keeps blaring while the recognizer is still chewing on the
-                // tail of the phrase. We still let onResult run normally so
-                // Jarvis acknowledges with "Останавливаю воспроизведение".
-                if (com.devin.jarvis.commands.MusicService.isPlayingActive()
-                        && Intents.looksLikeStopMusic(text)) {
+                    // If music is currently playing, STOP it the instant we
+                    // hear the wake word. Previously we only ducked the
+                    // volume to 8% for 4.5 sec — but if the recogniser
+                    // mis-heard the stop verb (e.g. "остановим" vs the
+                    // expected "останови"), the duck would simply restore
+                    // and the song kept playing. Addressing Jarvis while a
+                    // song is on practically always means "stop it" anyway:
+                    // either explicitly, or because the user wants a query
+                    // they cannot reasonably hear over music. Net effect:
+                    // wake-word during music = silence, every time.
                     com.devin.jarvis.commands.MusicService.stopIfPlaying();
+                    broadcastTranscript(text, true);
                 }
             }
             @Override public void onResult(String text) {
@@ -169,7 +170,7 @@ public class JarvisService extends Service implements Brain.ReplyHandler {
                     if (speaking.get()) interruptSpeech();
                     broadcastTranscript(text, true);
                     armWatchdog();
-                    if (brain != null) brain.handleTranscript(text);
+                    handleVoiceCommand(text);
                 }
             }
             @Override public void onError(int code, String message) {
@@ -177,16 +178,16 @@ public class JarvisService extends Service implements Brain.ReplyHandler {
                 String msg;
                 if ("no_record_permission".equals(message)) {
                     msg = "ru".equalsIgnoreCase(settings.language())
-                            ? "Нет разрешения на микрофон, сэр."
-                            : "Microphone permission missing, sir.";
+                            ? "Нет разрешения на микрофон."
+                            : "Microphone permission missing.";
                 } else if (message != null && message.startsWith("model_unpack_failed")) {
                     msg = "ru".equalsIgnoreCase(settings.language())
-                            ? "Не удалось распаковать модель распознавания, сэр."
-                            : "Could not unpack the speech model, sir.";
+                            ? "Не удалось распаковать модель распознавания."
+                            : "Could not unpack the speech model.";
                 } else if (message != null && message.startsWith("audio_record")) {
                     msg = "ru".equalsIgnoreCase(settings.language())
-                            ? "Не удалось открыть микрофон, сэр."
-                            : "Could not open the microphone, sir.";
+                            ? "Не удалось открыть микрофон."
+                            : "Could not open the microphone.";
                 } else {
                     msg = message;
                 }
@@ -225,13 +226,32 @@ public class JarvisService extends Service implements Brain.ReplyHandler {
         main.postDelayed(() -> {
             if (speaker != null) {
                 String greet = "ru".equalsIgnoreCase(settings.language())
-                        ? "Все системы запущены, сэр. Я к вашим услугам."
-                        : "All systems online, sir. At your service.";
+                        ? Persona.pick(
+                            "Системы запущены. Я к вашим услугам.",
+                            "Готов к работе.",
+                            "На связи. Командуйте.",
+                            "Все системы запущены, сэр.")
+                        : Persona.pick(
+                            "All systems online.",
+                            "Ready when you are.",
+                            "Standing by.",
+                            "Online, sir.");
                 say(greet);
             }
         }, 1200);
 
         listener.start();
+
+        // If the user has the optional Whisper-medium recognizer enabled,
+        // pre-load the model in the background so the first command after
+        // service start doesn't pay the ~3 sec model-load cost.
+        if (settings != null && settings.useWhisper()) {
+            try {
+                com.devin.jarvis.voice.WhisperRecognizer.get(this).loadAsync();
+            } catch (Throwable t) {
+                Log.w(TAG, "Whisper preload skipped: " + t);
+            }
+        }
     }
 
     private void shutdown() {
@@ -251,8 +271,8 @@ public class JarvisService extends Service implements Brain.ReplyHandler {
         listener.setMuted(newMuted);
         if (speaker != null) {
             String reply = "ru".equalsIgnoreCase(settings.language())
-                    ? (newMuted ? "Микрофон выключен, сэр." : "Микрофон включён.")
-                    : (newMuted ? "Microphone muted, sir." : "Microphone live again.");
+                    ? (newMuted ? "Микрофон выключен." : "Микрофон включён.")
+                    : (newMuted ? "Microphone muted." : "Microphone live again.");
             // Use say() so the response goes through the same mute-during-
             // speech logic. (When unmuting we DO want to hear the voice; the
             // listener was muted before this call, so say() won't auto-unmute
@@ -286,6 +306,57 @@ public class JarvisService extends Service implements Brain.ReplyHandler {
         if (brain != null) brain.handleTypedText(t);
     }
 
+    /**
+     * Voice path: dispatches a Vosk-final transcript to the brain, optionally
+     * re-transcribing the recent mic audio with Whisper-medium for higher
+     * accuracy on rare words / names / accents. Whisper inference is heavy
+     * (~3–10 sec depending on phone), so we run it on a background thread and
+     * speak the user's "thinking" status while we wait. If Whisper fails or
+     * is disabled, the original Vosk text is used.
+     */
+    private void handleVoiceCommand(String voskText) {
+        boolean wantWhisper = settings != null
+                && settings.useWhisper()
+                && listener != null;
+        if (!wantWhisper) {
+            if (brain != null) brain.handleTranscript(voskText);
+            return;
+        }
+        com.devin.jarvis.voice.WhisperRecognizer w =
+                com.devin.jarvis.voice.WhisperRecognizer.get(this);
+        if (!w.isReady()) {
+            // First call kicks off async load; in the meantime fall back to Vosk.
+            w.loadAsync();
+            if (brain != null) brain.handleTranscript(voskText);
+            return;
+        }
+        // Snapshot the last ~10 sec of mic audio NOW so we don't lose it
+        // while Whisper runs.
+        final short[] pcm = listener.lastPcm16(10);
+        final String lang = settings.language();
+        final String fallback = voskText;
+        new Thread(() -> {
+            String betterText = null;
+            try {
+                long t0 = System.currentTimeMillis();
+                betterText = w.transcribePcm16Sync(pcm, lang);
+                long dt = System.currentTimeMillis() - t0;
+                Log.i(TAG, "Whisper(" + lang + ") took " + dt + " ms, said: \"" + betterText + "\"");
+            } catch (Throwable t) {
+                Log.w(TAG, "Whisper threw, using Vosk text", t);
+            }
+            String chosen = betterText;
+            if (chosen == null || chosen.isEmpty()) chosen = fallback;
+            // Re-broadcast the *Whisper* version of the transcript so the user
+            // sees what was actually understood.
+            final String shown = chosen;
+            main.post(() -> {
+                broadcastTranscript(shown, true);
+                if (brain != null) brain.handleTranscript(shown);
+            });
+        }, "Jarvis-Whisper-Run").start();
+    }
+
     /** Re-read user-tunable knobs from settings and apply them on the fly. */
     public void applySettingsRefresh() {
         if (settings == null) return;
@@ -303,8 +374,15 @@ public class JarvisService extends Service implements Brain.ReplyHandler {
     private final Runnable watchdogTask = () -> {
         boolean ru = settings != null && "ru".equalsIgnoreCase(settings.language());
         say(ru
-                ? "Что-то я задумался, сэр. Повторите, пожалуйста."
-                : "I'm afraid I lost my train of thought, sir. Try again.");
+                ? Persona.pick(
+                    "Что-то я задумался. Повторите, пожалуйста.",
+                    "Извините, пропустил. Повторите.",
+                    "Простите, сэр — выпал. Повторите.",
+                    "Связь встала. Пробуйте ещё раз.")
+                : Persona.pick(
+                    "I'm afraid I lost my train of thought. Try again.",
+                    "My apologies — missed that. Once more?",
+                    "Sorry, sir, I drifted. Repeat please."));
     };
 
     /**
@@ -375,8 +453,14 @@ public class JarvisService extends Service implements Brain.ReplyHandler {
     @Override
     public void onShutdownRequested() {
         say("ru".equalsIgnoreCase(settings.language())
-                ? "Перехожу в спящий режим, сэр."
-                : "Going to sleep, sir.");
+                ? Persona.pick(
+                    "Перехожу в спящий режим.",
+                    "Отключаюсь. До связи.",
+                    "Иду спать, сэр.")
+                : Persona.pick(
+                    "Going to sleep.",
+                    "Powering down. Until next time.",
+                    "Standing down, sir."));
         main.postDelayed(this::shutdown, 1500);
     }
 

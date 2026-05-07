@@ -25,7 +25,8 @@ public class ReminderManager {
         Intent i = new Intent(ctx, AlertReceiver.class)
                 .setAction(AlertReceiver.ACTION_FIRE)
                 .putExtra("title", "Напоминание")
-                .putExtra("text", message == null ? "" : message);
+                .putExtra("text", message == null ? "" : message)
+                .putExtra(AlertService.EXTRA_KIND, AlertService.KIND_REMINDER);
         int id = nextId.getAndIncrement();
         PendingIntent pi = PendingIntent.getBroadcast(ctx, id, i,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);

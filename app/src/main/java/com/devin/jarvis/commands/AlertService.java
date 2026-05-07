@@ -41,10 +41,23 @@ public class AlertService extends Service {
     public static final String ACTION_STOP = "com.devin.jarvis.ALERT_STOP";
     public static final String EXTRA_TITLE = "title";
     public static final String EXTRA_TEXT = "text";
+    /**
+     * Optional kind: "alarm", "timer", "reminder" — controls how long the
+     * tone keeps ringing. Alarms ring for the full minute (until the user
+     * dismisses), timers ring for ~25 seconds, reminders are a short ping.
+     */
+    public static final String EXTRA_KIND = "kind";
+    public static final String KIND_ALARM = "alarm";
+    public static final String KIND_TIMER = "timer";
+    public static final String KIND_REMINDER = "reminder";
 
     private static final String CHANNEL_ID = "jarvis_alerts";
     private static final int NOTIF_ID = 7000;
-    private static final long MAX_RUN_MS = 60_000L;
+    /** Default cap if no kind is supplied. */
+    private static final long MAX_RUN_MS = 30_000L;
+    private static final long MAX_RUN_MS_ALARM = 60_000L;
+    private static final long MAX_RUN_MS_TIMER = 25_000L;
+    private static final long MAX_RUN_MS_REMINDER = 4_000L;
 
     private MediaPlayer player;
     private Vibrator vibrator;
@@ -65,16 +78,23 @@ public class AlertService extends Service {
 
         String title = intent != null ? intent.getStringExtra(EXTRA_TITLE) : null;
         String text = intent != null ? intent.getStringExtra(EXTRA_TEXT) : null;
+        String kind = intent != null ? intent.getStringExtra(EXTRA_KIND) : null;
         if (title == null) title = getString(R.string.reminder_title);
         if (text == null) text = "";
 
+        long runMs;
+        if (KIND_ALARM.equals(kind))         runMs = MAX_RUN_MS_ALARM;
+        else if (KIND_TIMER.equals(kind))    runMs = MAX_RUN_MS_TIMER;
+        else if (KIND_REMINDER.equals(kind)) runMs = MAX_RUN_MS_REMINDER;
+        else                                 runMs = MAX_RUN_MS;
+
         ensureChannel();
         startForeground(NOTIF_ID, buildNotification(title, text));
-        startAlerting();
+        startAlerting(runMs);
         return START_NOT_STICKY;
     }
 
-    private void startAlerting() {
+    private void startAlerting(long runMs) {
         // Play alarm tone on STREAM_ALARM so it's audible even when ringer
         // is in silent mode.
         try {
@@ -109,7 +129,7 @@ public class AlertService extends Service {
             stopAlerting();
             stopSelf();
         };
-        handler.postDelayed(autoStop, MAX_RUN_MS);
+        handler.postDelayed(autoStop, runMs);
     }
 
     private void stopAlerting() {

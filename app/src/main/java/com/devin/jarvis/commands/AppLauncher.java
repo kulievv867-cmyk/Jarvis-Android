@@ -242,6 +242,38 @@ public class AppLauncher {
         } catch (Exception ignored) {}
     }
 
+    /**
+     * Best-effort check whether {@code m} is the currently visible app.
+     * Returns false if we can't tell (no UsageStats permission, no running-
+     * tasks API on modern Android). Used to decide whether to escalate to
+     * the App Info screen for manual force-stop.
+     */
+    public boolean isAppForeground(Match m) {
+        if (m == null) return false;
+        try {
+            android.app.usage.UsageStatsManager usm = (android.app.usage.UsageStatsManager)
+                    ctx.getSystemService(Context.USAGE_STATS_SERVICE);
+            if (usm == null) return false;
+            long now = System.currentTimeMillis();
+            android.app.usage.UsageEvents events = usm.queryEvents(now - 30_000L, now);
+            if (events == null) return false;
+            String lastFgPkg = null;
+            android.app.usage.UsageEvents.Event e = new android.app.usage.UsageEvents.Event();
+            while (events.hasNextEvent()) {
+                events.getNextEvent(e);
+                int t = e.getEventType();
+                // ACTIVITY_RESUMED on API ≥ 29; MOVE_TO_FOREGROUND on older.
+                if (t == android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED
+                        || t == android.app.usage.UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                    lastFgPkg = e.getPackageName();
+                }
+            }
+            return m.pkg.equals(lastFgPkg);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     public void openAppInfo(Match m) {
         if (m == null) return;
         try {

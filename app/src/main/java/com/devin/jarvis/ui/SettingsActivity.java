@@ -15,10 +15,12 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.devin.jarvis.R;
 import com.devin.jarvis.core.Memory;
+import com.devin.jarvis.core.ProxyManager;
 import com.devin.jarvis.core.Settings;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.materialswitch.MaterialSwitch;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -34,10 +36,30 @@ public class SettingsActivity extends AppCompatActivity {
     private MaterialSwitch llmSwitch;
     private MaterialSwitch reverbSwitch;
     private MaterialSwitch modulationSwitch;
+    private MaterialSwitch whisperSwitch;
+    private TextView whisperStatus;
+    private MaterialButton whisperDeleteBtn;
+    private Spinner whisperModelSpinner;
+    private com.devin.jarvis.voice.WhisperRecognizer.ProgressListener whisperProgress;
+    private static final List<String> WHISPER_MODEL_VALUES = Arrays.asList(
+            "base", "small", "large-turbo");
     private EditText userNameEdit;
     private EditText userCityEdit;
     private EditText userCountryEdit;
     private EditText userTimezoneEdit;
+
+    // ---- v3 fields ----
+    private MaterialSwitch longMemorySwitch;
+    private MaterialSwitch fastTtsSwitch;
+    private MaterialSwitch internalAlarmSwitch;
+    private MaterialSwitch useProxySwitch;
+    private EditText proxyUrlEdit;
+    private Spinner proxyCandidateSpinner;
+    private MaterialButton proxyTestBtn;
+    private MaterialButton proxyDiscoverBtn;
+    private TextView proxyStatus;
+    private List<ProxyManager.Candidate> proxyCandidates = new ArrayList<>();
+    private ProxyManager activeDiscovery;
 
     private static final List<String> LANG_VALUES = Arrays.asList("ru", "en");
     private static final List<String> LANG_LABELS = Arrays.asList("Русский", "English");
@@ -65,6 +87,10 @@ public class SettingsActivity extends AppCompatActivity {
         llmSwitch = findViewById(R.id.llmSwitch);
         reverbSwitch = findViewById(R.id.reverbSwitch);
         modulationSwitch = findViewById(R.id.modulationSwitch);
+        whisperSwitch = findViewById(R.id.whisperSwitch);
+        whisperStatus = findViewById(R.id.whisperStatus);
+        whisperDeleteBtn = findViewById(R.id.whisperDeleteBtn);
+        whisperModelSpinner = findViewById(R.id.whisperModelSpinner);
         userNameEdit = findViewById(R.id.userNameEdit);
         userCityEdit = findViewById(R.id.userCityEdit);
         userCountryEdit = findViewById(R.id.userCountryEdit);
@@ -133,6 +159,90 @@ public class SettingsActivity extends AppCompatActivity {
         modulationSwitch.setChecked(settings.modulation());
         modulationSwitch.setOnCheckedChangeListener((CompoundButton b, boolean v) -> settings.setModulation(v));
 
+        whisperSwitch.setChecked(settings.useWhisper());
+        whisperSwitch.setOnCheckedChangeListener((CompoundButton b, boolean v) -> {
+            settings.setUseWhisper(v);
+            if (v) {
+                // Begin model download/load if not already cached.
+                com.devin.jarvis.voice.WhisperRecognizer.get(this).loadAsync();
+                refreshWhisperStatus();
+            } else {
+                whisperStatus.setVisibility(View.GONE);
+                refreshWhisperStatus();
+            }
+        });
+
+        // Model size selector. Switching variants drops the previously
+        // cached file from disk to avoid stacking up 0.7 GB of Whisper
+        // models the user no longer wants.
+        List<String> whisperModelLabels = Arrays.asList(
+                getString(R.string.setting_whisper_model_base),
+                getString(R.string.setting_whisper_model_small),
+                getString(R.string.setting_whisper_model_large));
+        ArrayAdapter<String> wma = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, whisperModelLabels);
+        wma.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        whisperModelSpinner.setAdapter(wma);
+        int wmIdx = WHISPER_MODEL_VALUES.indexOf(settings.whisperModel());
+        if (wmIdx < 0) wmIdx = 0;
+        whisperModelSpinner.setSelection(wmIdx);
+        whisperModelSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                String picked = WHISPER_MODEL_VALUES.get(position);
+                if (picked.equals(settings.whisperModel())) return;
+                com.devin.jarvis.voice.WhisperRecognizer w =
+                        com.devin.jarvis.voice.WhisperRecognizer.get(SettingsActivity.this);
+                // Drop the now-stale model file (and any other variant) so
+                // the user doesn't accumulate ~0.7 GB of unused Whisper
+                // weights. The new variant will download on next loadAsync.
+                w.deleteCachedModel();
+                settings.setWhisperModel(picked);
+                if (settings.useWhisper()) {
+                    w.loadAsync();
+                }
+                refreshWhisperStatus();
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) {}
+        });
+
+        whisperProgress = new com.devin.jarvis.voice.WhisperRecognizer.ProgressListener() {
+            @Override public void onProgress(long downloaded, long total) {
+                if (whisperStatus == null) return;
+                int pct = total > 0 ? (int) (downloaded * 100L / total) : 0;
+                String human = humanBytes(downloaded) + " / " + humanBytes(total);
+                whisperStatus.setVisibility(View.VISIBLE);
+                whisperStatus.setText(getString(R.string.setting_use_whisper_downloading, pct,
+                        humanBytes(downloaded), humanBytes(total)));
+            }
+            @Override public void onReady() {
+                if (whisperStatus == null) return;
+                whisperStatus.setVisibility(View.VISIBLE);
+                whisperStatus.setText(R.string.setting_use_whisper_ready);
+                refreshWhisperStatus();
+            }
+            @Override public void onError(String message) {
+                if (whisperStatus == null) return;
+                whisperStatus.setVisibility(View.VISIBLE);
+                whisperStatus.setText(getString(R.string.setting_use_whisper_failed,
+                        message == null ? "?" : message));
+            }
+        };
+        com.devin.jarvis.voice.WhisperRecognizer.get(this).addProgressListener(whisperProgress);
+
+        whisperDeleteBtn.setOnClickListener(v -> {
+            com.devin.jarvis.voice.WhisperRecognizer w =
+                    com.devin.jarvis.voice.WhisperRecognizer.get(this);
+            w.deleteCachedModel();
+            Toast.makeText(this, R.string.setting_use_whisper_deleted, Toast.LENGTH_SHORT).show();
+            // Force the user to re-enable to re-download.
+            settings.setUseWhisper(false);
+            whisperSwitch.setChecked(false);
+            whisperStatus.setVisibility(View.GONE);
+            refreshWhisperStatus();
+        });
+
+        refreshWhisperStatus();
+
         userNameEdit.setText(settings.userName());
         userCityEdit.setText(settings.userCity());
         userCountryEdit.setText(settings.userCountry());
@@ -142,6 +252,118 @@ public class SettingsActivity extends AppCompatActivity {
             new Memory(this).clear();
             Toast.makeText(this, R.string.memory_cleared, Toast.LENGTH_SHORT).show();
         });
+
+        // ---- v3 wiring: long memory / fast TTS / internal alarm / proxy ----
+        longMemorySwitch = findViewById(R.id.longMemorySwitch);
+        fastTtsSwitch = findViewById(R.id.fastTtsSwitch);
+        internalAlarmSwitch = findViewById(R.id.internalAlarmSwitch);
+        useProxySwitch = findViewById(R.id.useProxySwitch);
+        proxyUrlEdit = findViewById(R.id.proxyUrlEdit);
+        proxyCandidateSpinner = findViewById(R.id.proxyCandidateSpinner);
+        proxyTestBtn = findViewById(R.id.proxyTestBtn);
+        proxyDiscoverBtn = findViewById(R.id.proxyDiscoverBtn);
+        proxyStatus = findViewById(R.id.proxyStatus);
+
+        longMemorySwitch.setChecked(settings.longMemory());
+        longMemorySwitch.setOnCheckedChangeListener((b, v) -> settings.setLongMemory(v));
+
+        fastTtsSwitch.setChecked(settings.fastTts());
+        fastTtsSwitch.setOnCheckedChangeListener((b, v) -> settings.setFastTts(v));
+
+        internalAlarmSwitch.setChecked(settings.internalAlarmFallback());
+        internalAlarmSwitch.setOnCheckedChangeListener((b, v) -> settings.setInternalAlarmFallback(v));
+
+        useProxySwitch.setChecked(settings.useProxy());
+        useProxySwitch.setOnCheckedChangeListener((b, v) -> settings.setUseProxy(v));
+
+        proxyUrlEdit.setText(settings.proxyUrlRaw());
+
+        loadProxyCandidatesFromSettings();
+        refreshProxySpinner();
+
+        proxyTestBtn.setOnClickListener(v -> testCurrentProxy());
+        proxyDiscoverBtn.setOnClickListener(v -> discoverProxies());
+    }
+
+    private void loadProxyCandidatesFromSettings() {
+        proxyCandidates = new ArrayList<>(ProxyManager.fromJson(settings.proxyCandidatesJson()));
+    }
+
+    private void refreshProxySpinner() {
+        List<String> labels = new ArrayList<>();
+        labels.add("— ручной ввод выше —");
+        for (ProxyManager.Candidate c : proxyCandidates) labels.add(c.toString());
+        ArrayAdapter<String> a = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, labels);
+        a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        proxyCandidateSpinner.setAdapter(a);
+        proxyCandidateSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (position == 0) return;
+                ProxyManager.Candidate picked = proxyCandidates.get(position - 1);
+                proxyUrlEdit.setText(picked.url());
+                settings.setProxyUrl(picked.url());
+                proxyStatus.setVisibility(View.VISIBLE);
+                proxyStatus.setText(getString(R.string.setting_proxy_picked,
+                        picked.url(), (int) picked.latencyMs));
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) {}
+        });
+    }
+
+    private void testCurrentProxy() {
+        final String url = proxyUrlEdit.getText() != null
+                ? proxyUrlEdit.getText().toString().trim() : "";
+        if (TextUtils.isEmpty(url)) {
+            proxyStatus.setVisibility(View.VISIBLE);
+            proxyStatus.setText(R.string.setting_proxy_url_hint);
+            return;
+        }
+        settings.setProxyUrl(url);
+        proxyStatus.setVisibility(View.VISIBLE);
+        proxyStatus.setText("…");
+        new Thread(() -> {
+            long ms = ProxyManager.testProxyUrl(url);
+            runOnUiThread(() -> {
+                if (ms < 0) {
+                    proxyStatus.setText(getString(R.string.setting_proxy_test_fail, "timeout"));
+                } else {
+                    proxyStatus.setText(getString(R.string.setting_proxy_test_ok, (int) ms));
+                }
+            });
+        }, "ProxyTest").start();
+    }
+
+    private void discoverProxies() {
+        if (activeDiscovery != null) activeDiscovery.cancel();
+        activeDiscovery = new ProxyManager();
+        proxyDiscoverBtn.setEnabled(false);
+        proxyStatus.setVisibility(View.VISIBLE);
+        proxyStatus.setText("…");
+        activeDiscovery.discoverAndRank(8, new ProxyManager.Listener() {
+            @Override public void onProgress(int tested, int total, int passed) {
+                proxyStatus.setText("Тестирую: " + tested + "/" + total
+                        + " (рабочих: " + passed + ")");
+            }
+            @Override public void onDone(List<ProxyManager.Candidate> ranked) {
+                proxyDiscoverBtn.setEnabled(true);
+                proxyCandidates = new ArrayList<>(ranked);
+                settings.setProxyCandidatesJson(ProxyManager.toJson(ranked));
+                refreshProxySpinner();
+                if (!ranked.isEmpty()) {
+                    ProxyManager.Candidate best = ranked.get(0);
+                    proxyUrlEdit.setText(best.url());
+                    settings.setProxyUrl(best.url());
+                    proxyStatus.setText(getString(R.string.setting_proxy_picked,
+                            best.url(), (int) best.latencyMs));
+                }
+            }
+            @Override public void onError(String message) {
+                proxyDiscoverBtn.setEnabled(true);
+                proxyStatus.setText(getString(R.string.setting_proxy_test_fail,
+                        message == null ? "?" : message));
+            }
+        });
     }
 
     @Override
@@ -149,6 +371,9 @@ public class SettingsActivity extends AppCompatActivity {
         // Save any pending unsaved key automatically when leaving the screen.
         saveKeyFromEdit(false);
         savePersonalisation();
+        if (proxyUrlEdit != null) {
+            settings.setProxyUrl(text(proxyUrlEdit));
+        }
         super.onPause();
     }
 
@@ -189,5 +414,40 @@ public class SettingsActivity extends AppCompatActivity {
     private static String mask(String key) {
         if (key == null || key.length() < 8) return "****";
         return key.substring(0, 6) + "…" + key.substring(key.length() - 4);
+    }
+
+    private void refreshWhisperStatus() {
+        com.devin.jarvis.voice.WhisperRecognizer w =
+                com.devin.jarvis.voice.WhisperRecognizer.get(this);
+        boolean haveModel = w.isModelDownloaded();
+        boolean enabled   = settings.useWhisper();
+        whisperDeleteBtn.setVisibility(haveModel ? View.VISIBLE : View.GONE);
+        if (enabled && haveModel && !w.isReady() && !w.isDownloading()) {
+            // Cached but not yet loaded — kick a load so the next command uses
+            // it without delay.
+            w.loadAsync();
+        }
+        if (enabled && haveModel && w.isReady()) {
+            whisperStatus.setVisibility(View.VISIBLE);
+            whisperStatus.setText(R.string.setting_use_whisper_ready);
+        }
+    }
+
+    private static String humanBytes(long b) {
+        if (b < 1024) return b + " B";
+        if (b < 1024L * 1024) return String.format("%.0f KB", b / 1024.0);
+        if (b < 1024L * 1024 * 1024) return String.format("%.0f MB", b / 1048576.0);
+        return String.format("%.2f GB", b / 1073741824.0);
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (whisperProgress != null) {
+            try {
+                com.devin.jarvis.voice.WhisperRecognizer.get(this)
+                        .removeProgressListener(whisperProgress);
+            } catch (Throwable ignored) {}
+        }
+        super.onDestroy();
     }
 }

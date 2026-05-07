@@ -2,6 +2,9 @@ package com.devin.jarvis.weather;
 
 import android.util.Log;
 
+import com.devin.jarvis.core.NetClient;
+import com.devin.jarvis.core.Settings;
+
 import java.io.IOException;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
@@ -36,6 +39,16 @@ public final class YandexWeather {
             .readTimeout(8, TimeUnit.SECONDS)
             .callTimeout(12, TimeUnit.SECONDS)
             .build();
+
+    /** Returns a per-call OkHttpClient with the user's configured proxy. */
+    private static OkHttpClient httpFor(Settings settings) {
+        if (settings == null || settings.proxyUrl().isEmpty()) return HTTP;
+        return NetClient.okhttpBuilder(settings)
+                .connectTimeout(5, TimeUnit.SECONDS)
+                .readTimeout(8, TimeUnit.SECONDS)
+                .callTimeout(12, TimeUnit.SECONDS)
+                .build();
+    }
 
     /** ~10 minute cache. Yandex updates page ~every hour anyway. */
     private static final long CACHE_TTL_MS = 10 * 60 * 1000L;
@@ -112,12 +125,132 @@ public final class YandexWeather {
     }
 
     /**
+     * Day-level forecast extracted from the multi-day strip on
+     * yandex.ru/pogoda/&lt;city&gt;. Day index 0 = today, 1 = tomorrow,
+     * 2 = day after, …
+     */
+    public static class Forecast {
+        public final String city;
+        public final int dayOffset;       // 0 = today, 1 = tomorrow, ...
+        public final String label;        // "Завтра", "Послезавтра", "Сб, 9 мая"
+        public final Integer dayMaxC;     // dayttime max
+        public final Integer nightMinC;   // overnight min
+        public final String condition;    // "облачно", "ясно", ...
+        public final long fetchedAtMs;
+
+        Forecast(String city, int dayOffset, String label,
+                 Integer dayMaxC, Integer nightMinC, String condition) {
+            this.city = city;
+            this.dayOffset = dayOffset;
+            this.label = label;
+            this.dayMaxC = dayMaxC;
+            this.nightMinC = nightMinC;
+            this.condition = condition;
+            this.fetchedAtMs = System.currentTimeMillis();
+        }
+
+        public String renderRu() {
+            String when;
+            switch (dayOffset) {
+                case 0: when = "сегодня"; break;
+                case 1: when = "завтра"; break;
+                case 2: when = "послезавтра"; break;
+                default: when = (label != null && !label.isEmpty()) ? label.toLowerCase(Locale.ROOT) : ("через " + dayOffset + " дн."); break;
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.append("Прогноз ").append(when);
+            if (city != null && !city.isEmpty()) sb.append(" в ").append(city);
+            sb.append(": ");
+            boolean hasCond = condition != null && !condition.isEmpty();
+            if (hasCond) sb.append(condition);
+            if (dayMaxC != null) {
+                if (hasCond) sb.append(", ");
+                sb.append("днём ");
+                if (dayMaxC >= 0) sb.append('+');
+                sb.append(dayMaxC).append("°C");
+            }
+            if (nightMinC != null) {
+                sb.append(", ночью ");
+                if (nightMinC >= 0) sb.append('+');
+                sb.append(nightMinC).append("°C");
+            }
+            sb.append('.');
+            return sb.toString();
+        }
+
+        public String renderEn() {
+            String when;
+            switch (dayOffset) {
+                case 0: when = "today"; break;
+                case 1: when = "tomorrow"; break;
+                case 2: when = "the day after tomorrow"; break;
+                default: when = "in " + dayOffset + " days"; break;
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.append("Forecast for ").append(when);
+            if (city != null && !city.isEmpty()) sb.append(" in ").append(city);
+            sb.append(": ");
+            boolean hasCond = condition != null && !condition.isEmpty();
+            if (hasCond) sb.append(condition);
+            if (dayMaxC != null) {
+                if (hasCond) sb.append(", ");
+                sb.append("daytime ").append(dayMaxC).append("°C");
+            }
+            if (nightMinC != null) sb.append(", overnight ").append(nightMinC).append("°C");
+            sb.append('.');
+            return sb.toString();
+        }
+    }
+
+    /**
      * Fetches a current-conditions snapshot for the given city. Blocking —
      * call from a background thread. Returns {@code null} on any error
      * rather than throwing, so callers can simply skip the context block
      * if Yandex is unreachable.
      */
     public static Snapshot fetch(String city) {
+        return fetch(city, null);
+    }
+
+    /**
+     * Fetches a forecast for {@code dayOffset} days ahead (1 = tomorrow,
+     * 2 = day after tomorrow, … up to 9). We try the public
+     * /pogoda/&lt;city&gt;/details page first, then fall back to the main
+     * page strip.
+     *
+     * Returns {@code null} when the page is unreachable OR when the
+     * forecast row for the requested day couldn't be located in the HTML.
+     */
+    public static Forecast fetchForecast(String city, int dayOffset, Settings settings) {
+        if (city == null || city.trim().isEmpty()) return null;
+        if (dayOffset < 1 || dayOffset > 9) return null;
+        String slug = toSlug(city);
+        String[] urls = new String[] {
+                "https://yandex.ru/pogoda/" + slug + "/details",
+                "https://yandex.ru/pogoda/" + slug,
+        };
+        OkHttpClient http = httpFor(settings);
+        for (String url : urls) {
+            try {
+                Request req = new Request.Builder()
+                        .url(url)
+                        .header("User-Agent", "Mozilla/5.0 (Linux; Android 13) "
+                                + "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                + "Chrome/120.0.0.0 Mobile Safari/537.36")
+                        .header("Accept-Language", "ru,en;q=0.9")
+                        .build();
+                try (Response resp = http.newCall(req).execute()) {
+                    if (!resp.isSuccessful() || resp.body() == null) continue;
+                    String html = resp.body().string();
+                    Forecast f = parseForecast(html, city, dayOffset);
+                    if (f != null) return f;
+                }
+            } catch (IOException ignored) {}
+        }
+        return null;
+    }
+
+    public static Snapshot fetch(String city, Settings settings) {
         if (city == null || city.trim().isEmpty()) return null;
         String slug = toSlug(city);
         String key = slug;
@@ -135,7 +268,7 @@ public final class YandexWeather {
                     .header("Accept-Language", "ru,en;q=0.9")
                     .header("Accept", "text/html,application/xhtml+xml")
                     .build();
-            try (Response resp = HTTP.newCall(req).execute()) {
+            try (Response resp = httpFor(settings).newCall(req).execute()) {
                 if (!resp.isSuccessful() || resp.body() == null) {
                     Log.w(TAG, "Yandex Pogoda HTTP " + resp.code());
                     return null;
@@ -347,6 +480,81 @@ public final class YandexWeather {
             case "западный": case "зап": return "З";
             case "северо-западный": case "сз": return "СЗ";
             default: return raw.toUpperCase(Locale.ROOT);
+        }
+    }
+
+    // ---- Forecast parsing ----------------------------------------------------
+
+    /**
+     * Yandex Pogoda's multi-day strip puts every day in a row labelled
+     * "Завтра, 8 мая+12°+5°ясно" (or "Сб, 9 мая+10°+3°"). The labels we
+     * recognise: "Сегодня", "Завтра", "Послезавтра", or weekday + date.
+     * Labels are followed by two signed integer °C values (day max,
+     * night min) and an optional condition word.
+     */
+    private static final Pattern P_DAY_ROW = Pattern.compile(
+            "(Сегодня|Завтра|Послезавтра|(?:[Пп]онедельник|[Вв]торник|[Сс]реда|[Чч]етверг|[Пп]ятница|[Сс]уббота|[Вв]оскресенье|Пн|Вт|Ср|Чт|Пт|Сб|Вс)[\\s,]+\\d{1,2}\\s*[а-яё]+)" +
+            "[^+\\-−–\\d]{0,80}" +
+            "([+\\-−–]\\d{1,2})\\s*°[^+\\-−–\\d]{0,40}([+\\-−–]\\d{1,2})\\s*°" +
+            "[^а-яё]{0,8}([а-яё \\-]+?)?(?=\\s|$)",
+            Pattern.UNICODE_CASE);
+
+    /** Visible for tests. */
+    static Forecast parseForecast(String html, String city, int dayOffset) {
+        if (html == null) return null;
+        String text = stripHtml(html);
+        if (text.isEmpty()) return null;
+
+        java.util.List<DayRow> rows = new java.util.ArrayList<>();
+        Matcher m = P_DAY_ROW.matcher(text);
+        while (m.find() && rows.size() < 12) {
+            String label = m.group(1);
+            Integer dayMax = parseSignedInt(m.group(2));
+            Integer nightMin = parseSignedInt(m.group(3));
+            String cond = m.group(4);
+            if (cond != null) {
+                cond = cond.trim().toLowerCase(Locale.ROOT);
+                // Trim runaway tail words.
+                if (cond.length() > 24) cond = cond.substring(0, 24).trim();
+                if (cond.isEmpty()) cond = null;
+            }
+            rows.add(new DayRow(label, dayMax, nightMin, cond));
+        }
+        if (rows.isEmpty()) return null;
+
+        // Map dayOffset to a row in the strip.
+        int idx = -1;
+        // First, try matching by label.
+        for (int i = 0; i < rows.size(); i++) {
+            String lbl = rows.get(i).label == null ? "" : rows.get(i).label.toLowerCase(Locale.ROOT);
+            if (dayOffset == 0 && lbl.startsWith("сегодня")) { idx = i; break; }
+            if (dayOffset == 1 && lbl.startsWith("завтра")) { idx = i; break; }
+            if (dayOffset == 2 && lbl.startsWith("послезавтра")) { idx = i; break; }
+        }
+        // Otherwise treat row N as N days from now (Yandex orders chronologically).
+        if (idx < 0) {
+            // Find anchor: first row labelled "Сегодня" — use that as base.
+            int base = 0;
+            for (int i = 0; i < rows.size(); i++) {
+                String lbl = rows.get(i).label == null ? "" : rows.get(i).label.toLowerCase(Locale.ROOT);
+                if (lbl.startsWith("сегодня")) { base = i; break; }
+            }
+            int target = base + dayOffset;
+            if (target >= 0 && target < rows.size()) idx = target;
+        }
+        if (idx < 0) return null;
+        DayRow r = rows.get(idx);
+        if (r.dayMaxC == null && r.nightMinC == null) return null;
+        return new Forecast(city, dayOffset, r.label, r.dayMaxC, r.nightMinC, r.condition);
+    }
+
+    private static final class DayRow {
+        final String label;
+        final Integer dayMaxC;
+        final Integer nightMinC;
+        final String condition;
+        DayRow(String label, Integer dayMaxC, Integer nightMinC, String condition) {
+            this.label = label; this.dayMaxC = dayMaxC; this.nightMinC = nightMinC; this.condition = condition;
         }
     }
 
